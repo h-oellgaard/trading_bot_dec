@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Import configuration
 try:
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
     from config.firi_config import FIRI_CONFIG
 except ImportError:
     print("❌ Error: Could not import Firi configuration.")
@@ -87,7 +88,7 @@ def test_trading_functionality():
     # Test trading functionality with ETHDKK
     trading_results = exchange.test_trading_functionality(
         test_symbol="ETHDKK",
-        test_amount=0.001  # Very small amount for testing
+        test_amount=0.01  # Minimum allowed amount for Firi
     )
     
     if trading_results['price_retrieval']:

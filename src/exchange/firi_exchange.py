@@ -62,40 +62,32 @@ class FiriExchange:
                 timestamp = server_time
             else:
                 timestamp = int(time.time())
-        
-        # According to Firi docs: body should contain timestamp and validity as strings
-        # For GET requests: {"timestamp":"1234567890","validity":"2000"}
-        # For POST requests: include request body data as well
-        if method.upper() == 'GET':
-            signature_body = {
-                "timestamp": str(timestamp),
-                "validity": validity
-            }
-        else:
-            # For POST requests, include the request body data
+
+        # For POST requests, the signature must be generated from the full body including all fields
+        if method.upper() == 'POST' and body:
+            # Parse the body and add timestamp/validity as strings
             try:
                 body_data = json.loads(body) if body else {}
-                signature_body = {
-                    "timestamp": str(timestamp),
-                    "validity": validity,
-                    **body_data
-                }
-            except:
-                signature_body = {
-                    "timestamp": str(timestamp),
-                    "validity": validity
-                }
-        
-        # Convert to JSON string for HMAC
-        message = json.dumps(signature_body)
-        
-        # Generate HMAC signature
+            except Exception:
+                body_data = {}
+            # Add/overwrite timestamp and validity as strings
+            body_data['timestamp'] = str(timestamp)
+            body_data['validity'] = str(validity)
+            # Ensure all fields are strings
+            for k in body_data:
+                body_data[k] = str(body_data[k])
+            # Use separators to match Firi's expected JSON
+            message = json.dumps(body_data, separators=(",", ":"))
+        else:
+            # For GET requests, only timestamp/validity
+            message = json.dumps({"timestamp": str(timestamp), "validity": str(validity)}, separators=(",", ":"))
+
         signature = hmac.new(
             self.secret.encode('utf-8'),
             message.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
-        
+
         return signature, timestamp
     
     def _make_request(self, method: str, endpoint: str, data: Dict = None, 
@@ -164,11 +156,19 @@ class FiriExchange:
         """Get account balances - Note: This endpoint may not exist in current Firi API"""
         try:
             # Try different possible balance endpoints
-            endpoints = ['/v1/balance', '/v1/balances', '/v1/wallet', '/v1/account/balances']
+            endpoints = [
+                '/v1/balance', 
+                '/v1/balances', 
+                '/v1/wallet', 
+                '/v1/account/balances',
+                '/v1/user/balance',
+                '/v1/user/balances'
+            ]
             for endpoint in endpoints:
                 try:
                     response = self._make_request('GET', endpoint, requires_auth=True)
-                    return response if isinstance(response, list) else []
+                    if response is not None:
+                        return response if isinstance(response, list) else []
                 except:
                     continue
             logger.warning("No balance endpoint found - this may not be available")
@@ -300,18 +300,39 @@ class FiriExchange:
             amount: Order amount as string
         """
         try:
-            # According to Firi docs, order data should include all required fields
+            # According to Firi docs, order data should include all required fields as strings
             order_data = {
-                'market': market,
-                'type': order_type.lower(),  # 'bid' or 'ask'
+                'market': str(market),
+                'type': str(order_type).lower(),  # 'bid' or 'ask'
                 'price': str(price),
                 'amount': str(amount)
             }
             
             logger.info(f"Placing order: {order_data}")
-            response = self._make_request('POST', '/v1/orders', data=order_data, requires_auth=True)
-            logger.info(f"Order placed successfully: {response.get('id', 'Unknown')} - {market} {order_type} {amount}")
-            return response
+            
+            # Try different endpoint formats
+            endpoints = ['/v1/orders', '/v2/orders']
+            
+            for endpoint in endpoints:
+                try:
+                    response = self._make_request('POST', endpoint, data=order_data, requires_auth=True)
+                    if response is not None:
+                        logger.info(f"Order placed successfully: {response.get('id', 'Unknown')} - {market} {order_type} {amount}")
+                        return response
+                except Exception as e:
+                    # If it's a requests HTTP error, print the response content
+                    if hasattr(e, 'response') and e.response is not None:
+                        try:
+                            error_content = e.response.content.decode()
+                        except Exception:
+                            error_content = str(e.response.content)
+                        logger.error(f"Order placement failed with response: {error_content}")
+                        print(f"Order placement failed with response: {error_content}")
+                    logger.warning(f"Failed to place order on {endpoint}: {e}")
+                    continue
+            
+            logger.error("Failed to place order on all endpoints")
+            return None
             
         except Exception as e:
             logger.error(f"Failed to place order: {e}")
@@ -337,8 +358,24 @@ class FiriExchange:
                 # For specific market, use the market-specific endpoint
                 response = self._make_request('GET', f'/v1/orders/{market}/closed?count={count}', requires_auth=True)
             else:
-                # For all markets, use the general closed orders endpoint
-                response = self._make_request('GET', f'/v1/orders/closed?count={count}', requires_auth=True)
+                # For all markets, try different endpoint formats
+                endpoints = [
+                    f'/v1/orders/closed?count={count}',
+                    f'/v1/orders/closed?count={count}&market=all',
+                    f'/v1/orders/closed'
+                ]
+                
+                for endpoint in endpoints:
+                    try:
+                        response = self._make_request('GET', endpoint, requires_auth=True)
+                        if response is not None:
+                            break
+                    except:
+                        continue
+                else:
+                    logger.warning("No closed orders endpoint found")
+                    return []
+                    
             return response if isinstance(response, list) else []
             
         except Exception as e:
