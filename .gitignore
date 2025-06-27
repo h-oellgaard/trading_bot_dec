@@ -41,4 +41,21 @@ htmlcov/
 
 # Database
 *.db
-*.sqlite3 
+*.sqlite3
+
+# Configuration files with sensitive data
+config/
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+service-account-key.json
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp 

@@ -1,0 +1,107 @@
+Feature: Risk Management # features/risk_management.feature:1
+  As a trader
+  I want the bot to manage risk automatically
+  So that I can protect my capital and maximize profits
+  Background:   # features/risk_management.feature:6
+
+  Scenario: Position sizing based on portfolio percentage             # features/risk_management.feature:11
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given my portfolio value is $10,000                               # None
+    And I want to open a BUY position                                 # None
+    When the bot calculates position size                             # None
+    Then the position should not exceed $500 (5% of portfolio)        # None
+    And the position size should be logged                            # None
+
+  Scenario: Daily loss limit protection                               # features/risk_management.feature:18
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given I have open positions worth $8,000                          # None
+    And my daily loss limit is 2% ($200)                              # None
+    When my positions lose $250 in a day                              # None
+    Then the bot should close all positions                           # None
+    And stop trading for the remainder of the day                     # None
+    And log the daily loss limit breach                               # None
+
+  Scenario: Maximum drawdown protection                               # features/risk_management.feature:26
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given my portfolio started at $10,000                             # None
+    And the maximum drawdown is set to 15%                            # None
+    When my portfolio value drops to $8,000 (20% loss)                # None
+    Then the bot should close all positions                           # None
+    And stop trading until manual intervention                        # None
+    And send an alert about the drawdown breach                       # None
+
+  Scenario: Correlation-based position limits                         # features/risk_management.feature:34
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given I have positions in BTC and ETH                             # None
+    And the correlation limit is set to 0.8                           # None
+    When the correlation between BTC and ETH exceeds 0.8              # None
+    Then the bot should reduce position sizes                         # None
+    And close one of the correlated positions                         # None
+
+  Scenario: Volatility-adjusted position sizing                       # features/risk_management.feature:41
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given the market volatility is high (VIX > 30)                    # None
+    And I want to open a new position                                 # None
+    When the bot calculates position size                             # None
+    Then the position should be reduced by 50%                        # None
+    And the volatility adjustment should be logged                    # None
+
+  Scenario: Time-based position management                            # features/risk_management.feature:48
+    Given the trading bot is initialized with risk management enabled # features/steps/advanced_steps.py:133
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given I have an open position                                     # None
+    And the maximum holding time is 24 hours                          # None
+    When the position has been open for 25 hours                      # None
+    Then the bot should automatically close the position              # None
+    And log the time-based exit                                       # None
+
+  Scenario: News-based risk management                                # features/risk_management.feature:55
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given there is breaking news about a major crypto exchange        # None
+    And the news sentiment is negative                                # None
+    When the bot detects the news event                               # None
+    Then it should reduce all position sizes by 75%                   # None
+    And increase stop-loss sensitivity                                # None
+
+  Scenario: Liquidity-based position sizing                           # features/risk_management.feature:62
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given I want to trade a low-liquidity coin                        # None
+    And the 24-hour volume is $100,000                                # None
+    When the bot calculates position size                             # None
+    Then the position should be limited to 1% of daily volume         # None
+    And the liquidity constraint should be logged                     # None
+
+  Scenario: Multiple timeframe risk assessment                        # features/risk_management.feature:69
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given I have positions based on 1-hour signals                    # None
+    And the 4-hour trend is bearish                                   # None
+    When the bot performs risk assessment                             # None
+    Then it should reduce position sizes                              # None
+    And close positions against the higher timeframe trend            # None
+
+  Scenario: Portfolio heat map monitoring                             # features/risk_management.feature:76
+    Given the trading bot is initialized with risk management enabled # None
+    And the maximum position size is set to 5% of portfolio           # None
+    And the maximum daily loss is set to 2% of portfolio              # None
+    Given I have positions in multiple cryptocurrencies               # None
+    When the bot analyzes portfolio concentration                     # None
+    Then it should identify over-concentration in any single asset    # None
+    And suggest position rebalancing if needed                        # None
+
