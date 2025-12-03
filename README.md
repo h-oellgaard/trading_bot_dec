@@ -1,96 +1,278 @@
-# ⚙️ Arkitekturprincipper for Crypto Trading Bot
+# Firi Trading Bot
 
-Dette dokument beskriver retningslinjer for udviklingen af en Python-baseret crypto trading bot. Målet er at opnå **høj kvalitet, lav kobling, høj testbarhed** og mulighed for nem videreudvikling.
+En komplet Python-trading bot der handler via Firi API og gemmer alle data i Firebase Firestore.
 
----
+## Arkitektur
 
-## ✅ Designprincipper
+Projektet følger GRASP-principper og Separation of Concerns:
 
-### Separation of Concerns (SoC)
-- Hold ansvar adskilt: data, strategi, execution og persistens skal være i egne moduler.
-- Undgå at blande logik og I/O (ingen print eller filadgang i strategikoden).
+- **data_fetcher.py** - Henter OHLC-priser fra Firi API
+- **indicators.py** - Beregner SMA og EMA (pure functions)
+- **strategy.py** - Implementerer trading strategi
+- **trader.py** - Placerer handler via Firi API
+- **firebase_store.py** - Gemmer alle data i Firebase Firestore
+- **main.py** - Kører loop, logging og orchestrering
+- **models.py** - Data modeller (dataclasses)
 
-### GRASP-principper
-- **Information Expert**: Placer ansvar der, hvor data er tilgængelig.
-- **Low Coupling**: Komponenter skal kunne ændres uafhængigt.
-- **High Cohesion**: Klasser skal kun gøre det, de er bedst til.
-- **Creator**: Den klasse, der har flest oplysninger om et objekt, bør oprette det.
+## Strategi
 
----
+- **KØB**: Når kort SMA krydser over lang SMA
+- **SÆLG**: Når kort EMA ligger under lang SMA i 3 candles i træk
+- **Pair**: BTC/NOK
+- **Max ét åbent trade af gangen**
+- **Take-profit**: 5%
+- **Stop-loss**: 3%
 
-## 🧱 Arkitekturkrav
+## Installation
 
-### 1. Coin-objekt
-```python
-class Coin:
-    def __init__(self, symbol: str, name: str, precision: int):
-        self.symbol = symbol
-        self.name = name
-        self.precision = precision
-```
-- Ingen direkte afhængighed til exchange.
+1. Klon eller download projektet
 
-### 2. Handelser og gemning
-- Brug `Trade`-klasser til at repræsentere handler:
-```python
-class Trade:
-    def __init__(self, coin: Coin, action: str, amount: float, price: float, timestamp: datetime):
-        ...
-```
-- Persistér via `TradeRepository` (fil, SQLite, memory).
-
-### 3. Strategi-mønster
-- Implementér strategi som klasse med `generate_signal(market_data)`:
-```python
-class TradingStrategy(ABC):
-    @abstractmethod
-    def generate_signal(self, market_data: MarketData) -> Optional[str]:
-        ...
+2. Installer dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-### 4. Testbarhed
-- Brug **dependency injection** for at isolere tests.
-- Al forretningslogik skal kunne enhedstestes.
-- Tilføj integrationstests for end-to-end flow.
+3. Opret Firebase projekt:
+   - Gå til [Firebase Console](https://console.firebase.google.com/)
+   - Opret nyt projekt
+   - Aktiver Firestore Database
+   - Gå til Project Settings > Service Accounts
+   - Generer ny private key og download JSON-filen
 
----
+4. Konfigurer environment variabler:
+   - Kopier `.env.example` til `.env`
+   - Udfyld alle værdier:
+     - `FIRI_API_KEY`: Din Firi API nøgle
+     - `FIRI_SECRET`: Din Firi API secret
+     - `GOOGLE_APPLICATION_CREDENTIALS`: Sti til Firebase service account JSON-fil
+     - Juster andre indstillinger efter behov
 
-## 🔄 Iterationsprincipper
+## Kørsel
 
-Når første løsning er på plads:
-1. Gennemgå og refaktorér for:
-   - Navngivning
-   - Ansvarsfordeling
-   - Fjernelse af duplikering
-2. Forbedr ud fra:
-   - **SOLID-principper**
-   - Interface-orienteret design
-   - Klar opdeling mellem domæne og infrastruktur
-
----
-
-## 🧪 Eksempel på testbar struktur
-
-```python
-# tests/test_sma_cross.py
-
-def test_sma_cross_buy_signal():
-    strategy = SmaCrossStrategy(short=3, long=5)
-    market_data = [100, 102, 104, 103, 106]  # Eksempeldata
-    signal = strategy.generate_signal(market_data)
-    assert signal == "BUY"
+```bash
+python main.py
 ```
 
----
+Botten kører kontinuerligt og:
+- Henter prisdata hver 5. minut (konfigurerbart via `POLL_INTERVAL`)
+- Genererer trading signals baseret på strategien
+- Placerer handler automatisk
+- Gemmer alle data i Firebase Firestore
+- Logger alle aktiviteter til `trading_bot.log`
 
-## 🛠️ Teknologi-stack
+## Testing
 
-- Python 3.11+
-- SQLite (eller filbaseret persistens)
-- Pytest til test
-- Modular design
-- Valgfri: REST API, WebSocket, CLI, Discord/Telegram bots
+Kør unit tests for indicators:
 
----
+```bash
+pytest test_indicators.py -v
+```
 
-> 📌 Brug dette dokument som udgangspunkt for udvikling, review og iteration. Alle kodeforslag skal være testbare og så vidt muligt ikke kræve ændringer i andre moduler.
+## Firebase Struktur
+
+Botten gemmer data i følgende Firestore collections:
+
+- **trades/{tradeId}** - Alle handler
+- **signals/{timestamp}** - Trading signals
+- **portfolio/current** - Nuværende portfolio state
+- **portfolio/history/snapshots/{timestamp}** - Historiske portfolio snapshots
+- **prices/{timestamp}** - Pris snapshots
+
+## Deployment på VPS
+
+### 1. Forbered VPS
+
+```bash
+# Opdater system
+sudo apt update && sudo apt upgrade -y
+
+# Installer Python og pip
+sudo apt install python3 python3-pip python3-venv -y
+
+# Installer git hvis nødvendigt
+sudo apt install git -y
+```
+
+### 2. Upload projektet
+
+```bash
+# Klon projektet eller upload filer
+cd /opt
+sudo mkdir trading-bot
+sudo chown $USER:$USER trading-bot
+cd trading-bot
+
+# Upload alle filer hertil (via scp, rsync, eller git clone)
+```
+
+### 3. Opsæt Python miljø
+
+```bash
+# Opret virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Installer dependencies
+pip install -r requirements.txt
+```
+
+### 4. Konfigurer environment
+
+```bash
+# Opret .env fil
+nano .env
+
+# Indsæt alle nødvendige variabler (se .env.example)
+# Upload Firebase service account JSON til VPS
+# Opdater GOOGLE_APPLICATION_CREDENTIALS sti
+```
+
+### 5. Opret systemd service
+
+Opret `/etc/systemd/system/trading-bot.service`:
+
+```ini
+[Unit]
+Description=Firi Trading Bot
+After=network.target
+
+[Service]
+Type=simple
+User=your_username
+WorkingDirectory=/opt/trading-bot
+Environment="PATH=/opt/trading-bot/venv/bin"
+ExecStart=/opt/trading-bot/venv/bin/python /opt/trading-bot/main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Aktiver og start service:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable trading-bot
+sudo systemctl start trading-bot
+sudo systemctl status trading-bot
+```
+
+### 6. Se logs
+
+```bash
+# Systemd logs
+sudo journalctl -u trading-bot -f
+
+# Eller app logs
+tail -f /opt/trading-bot/trading_bot.log
+```
+
+## Integration med Web Frontend
+
+### Firebase Firestore Integration
+
+Din web frontend kan læse data direkte fra Firestore:
+
+```javascript
+// Eksempel med Firebase JS SDK
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+
+const firebaseConfig = {
+  // Din Firebase config
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Lyt til real-time updates af trades
+const tradesRef = collection(db, 'trades');
+const q = query(tradesRef, orderBy('timestamp', 'desc'), limit(10));
+onSnapshot(q, (snapshot) => {
+  snapshot.forEach((doc) => {
+    console.log('Trade:', doc.data());
+  });
+});
+
+// Hent portfolio state
+const portfolioRef = doc(db, 'portfolio', 'current');
+onSnapshot(portfolioRef, (doc) => {
+  console.log('Portfolio:', doc.data());
+});
+```
+
+### REST API (Valgfri)
+
+Hvis du vil have en REST API, kan du oprette en separat Flask/FastAPI service der læser fra Firestore:
+
+```python
+# api_server.py (eksempel)
+from flask import Flask, jsonify
+from firebase_store import FirebaseStore
+
+app = Flask(__name__)
+firebase = FirebaseStore()
+
+@app.route('/api/trades')
+def get_trades():
+    trades = firebase.get_all_trades(limit=100)
+    return jsonify([t.to_dict() for t in trades])
+
+@app.route('/api/portfolio')
+def get_portfolio():
+    portfolio = firebase.get_current_portfolio_state()
+    return jsonify(portfolio.to_dict() if portfolio else {})
+```
+
+## Firebase Security Rules
+
+Deploy Firebase security rules:
+
+```bash
+# Installer Firebase CLI
+npm install -g firebase-tools
+
+# Login
+firebase login
+
+# Initialiser projekt (hvis ikke allerede gjort)
+firebase init firestore
+
+# Deploy rules
+firebase deploy --only firestore:rules
+```
+
+Eller upload `firestore.rules` manuelt via Firebase Console.
+
+## Sikkerhed
+
+- **ALDRIG** commit `.env` filen til git
+- Brug `.gitignore` til at ekskludere:
+  - `.env`
+  - `*.json` (service account keys)
+  - `venv/`
+  - `__pycache__/`
+  - `*.log`
+
+## Troubleshooting
+
+### Bot stopper med fejl
+- Tjek logs: `tail -f trading_bot.log`
+- Verificer API credentials i `.env`
+- Tjek Firebase service account permissions
+
+### Ingen handler placeres
+- Verificer at der er tilstrækkelig balance
+- Tjek at strategi betingelser er opfyldt
+- Se signal logs i Firebase
+
+### Firebase connection fejl
+- Verificer `GOOGLE_APPLICATION_CREDENTIALS` sti
+- Tjek at service account JSON er gyldig
+- Verificer Firestore er aktiveret i Firebase projekt
+
+## Licens
+
+Dette projekt er til brug som reference. Brug på eget ansvar.
+

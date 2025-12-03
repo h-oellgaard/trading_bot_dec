@@ -1,1 +1,0 @@
-"""Domain models and interfaces for the trading bot.""" 

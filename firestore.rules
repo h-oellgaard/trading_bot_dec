@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Trades collection - read/write for authenticated users only
+    match /trades/{tradeId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Signals collection - read/write for authenticated users only
+    match /signals/{signalId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Portfolio collection - read/write for authenticated users only
+    match /portfolio/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Prices collection - read/write for authenticated users only
+    match /prices/{priceId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Alternative: If you want to allow public read but authenticated write
+    // Uncomment the following and comment out the above rules if needed:
+    
+    // match /trades/{tradeId} {
+    //   allow read: if true;
+    //   allow write: if request.auth != null;
+    // }
+    
+    // match /signals/{signalId} {
+    //   allow read: if true;
+    //   allow write: if request.auth != null;
+    // }
+    
+    // match /portfolio/{document=**} {
+    //   allow read: if true;
+    //   allow write: if request.auth != null;
+    // }
+    
+    // match /prices/{priceId} {
+    //   allow read: if true;
+    //   allow write: if request.auth != null;
+    // }
+  }
+}
+
