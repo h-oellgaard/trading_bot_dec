@@ -28,7 +28,7 @@ def _fetch_firi_orderbook() -> tuple[dict | None, str | None]:
                 continue
             response.raise_for_status()
             return response.json(), None
-        except Exception as e:
+        except Exception:
             continue
     return None, "Could not reach Firi depth API"
 

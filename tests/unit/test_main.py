@@ -16,42 +16,23 @@ def _mock_firebase_handler():
     return h
 
 
-def test_poll_interval_from_env():
+def test_poll_interval_from_trading_config():
     """
-    GIVEN POLL_INTERVAL=30 in environment
+    GIVEN trading_config defines POLL_INTERVAL
     WHEN TradingBot is initialized
-    THEN bot.poll_interval is 30 seconds.
+    THEN bot.poll_interval matches trading_config.
     """
     mock_data_fetcher = MagicMock()
-    mock_data_fetcher.get_order_format.return_value = None  # Use env defaults
-    with patch.dict(os.environ, {"POLL_INTERVAL": "30"}, clear=False):
-        with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
-            with patch("main.FiriTrader", MagicMock()):
-                with patch("main.FirebaseStore", MagicMock()):
-                    with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
-                        from main import TradingBot
+    mock_data_fetcher.get_order_format.return_value = (2, 8)
+    with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
+        with patch("main.FiriTrader", MagicMock()):
+            with patch("main.FirebaseStore", MagicMock()):
+                with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
+                    from main import TradingBot
+                    from settings.trading_config import POLL_INTERVAL
 
-                        bot = TradingBot()
-                        assert bot.poll_interval == 30
-
-
-def test_poll_interval_custom_value():
-    """
-    GIVEN POLL_INTERVAL=60 in environment
-    WHEN TradingBot is initialized
-    THEN bot.poll_interval is 60 seconds.
-    """
-    mock_data_fetcher = MagicMock()
-    mock_data_fetcher.get_order_format.return_value = None  # Use env defaults
-    with patch.dict(os.environ, {"POLL_INTERVAL": "60"}, clear=False):
-        with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
-            with patch("main.FiriTrader", MagicMock()):
-                with patch("main.FirebaseStore", MagicMock()):
-                    with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
-                        from main import TradingBot
-
-                        bot = TradingBot()
-                        assert bot.poll_interval == 60
+                    bot = TradingBot()
+                    assert bot.poll_interval == POLL_INTERVAL
 
 
 def test_firi_format_applied_at_startup():
@@ -64,8 +45,7 @@ def test_firi_format_applied_at_startup():
     mock_data_fetcher.get_order_format.return_value = (2, 8)
     mock_trader = MagicMock()
 
-    with patch.dict(os.environ, {"POLL_INTERVAL": "30"}, clear=False):
-        with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
+    with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
             with patch("main.FiriTrader", return_value=mock_trader):
                 with patch("main.FirebaseStore", MagicMock()):
                     with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
@@ -77,47 +57,95 @@ def test_firi_format_applied_at_startup():
                         assert mock_trader.quantity_decimals == 8
 
 
-def test_firi_format_none_keeps_trader_defaults():
+def test_firi_format_uses_trading_pair_from_trading_config():
     """
-    GIVEN get_order_format returns None (Firi unavailable)
+    GIVEN trading_config defines TRADING_PAIR
     WHEN TradingBot is initialized
-    THEN trader keeps its default price_decimals and quantity_decimals.
-    """
-    mock_data_fetcher = MagicMock()
-    mock_data_fetcher.get_order_format.return_value = None
-    mock_trader = MagicMock()
-    mock_trader.price_decimals = 2
-    mock_trader.quantity_decimals = 8
-
-    with patch.dict(os.environ, {"POLL_INTERVAL": "30"}, clear=False):
-        with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
-            with patch("main.FiriTrader", return_value=mock_trader):
-                with patch("main.FirebaseStore", MagicMock()):
-                    with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
-                        from main import TradingBot
-
-                        bot = TradingBot()
-                        # Trader was never reassigned - still has original values
-                        assert mock_trader.price_decimals == 2
-                        assert mock_trader.quantity_decimals == 8
-
-
-def test_firi_format_uses_trading_pair_from_env():
-    """
-    GIVEN TRADING_PAIR=ETH/NOK in environment
-    WHEN TradingBot is initialized
-    THEN get_order_format is called with ETH/NOK.
+    THEN get_order_format is called with that pair.
     """
     mock_data_fetcher = MagicMock()
     mock_data_fetcher.get_order_format.return_value = (2, 8)
     mock_trader = MagicMock()
 
-    with patch.dict(os.environ, {"POLL_INTERVAL": "30", "TRADING_PAIR": "ETH/NOK"}, clear=False):
+    with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
+        with patch("main.FiriTrader", return_value=mock_trader):
+            with patch("main.FirebaseStore", MagicMock()):
+                with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
+                    from main import TradingBot
+
+                    bot = TradingBot()
+                    mock_data_fetcher.get_order_format.assert_called_once_with("BTC/DKK")
+
+
+def test_ema_periods_from_trading_config():
+    """
+    GIVEN trading_config defines SHORT/MEDIUM/LONG_EMA_PERIOD
+    WHEN TradingBot is initialized
+    THEN strategy uses those EMA periods.
+    """
+    mock_data_fetcher = MagicMock()
+    mock_data_fetcher.get_order_format.return_value = (2, 8)
+
+    with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
+        with patch("main.FiriTrader", MagicMock()):
+            with patch("main.FirebaseStore", MagicMock()):
+                with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
+                    from main import TradingBot
+                    from settings.trading_config import (
+                        SHORT_EMA_PERIOD,
+                        MEDIUM_EMA_PERIOD,
+                        LONG_EMA_PERIOD,
+                    )
+
+                    bot = TradingBot()
+                    assert bot.strategy.short_ema_period == SHORT_EMA_PERIOD
+                    assert bot.strategy.medium_ema_period == MEDIUM_EMA_PERIOD
+                    assert bot.strategy.long_ema_period == LONG_EMA_PERIOD
+
+
+def test_invalid_trading_pair_raises_error():
+    """
+    GIVEN TRADING_PAIR is BZZ/DKK (pair that doesn't exist on Firi)
+    WHEN TradingBot initializes and get_order_format returns None (Firi 404)
+    THEN bot raises an error to the user, no silent fallback to defaults.
+    """
+    mock_data_fetcher = MagicMock()
+    mock_data_fetcher.get_order_format.return_value = None  # Firi 404 for non-existent pair
+
+    with patch("main.TRADING_PAIR", "BZZ/DKK"):
         with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
-            with patch("main.FiriTrader", return_value=mock_trader):
+            with patch("main.FiriTrader", MagicMock()):
                 with patch("main.FirebaseStore", MagicMock()):
                     with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
                         from main import TradingBot
 
-                        bot = TradingBot()
-                        mock_data_fetcher.get_order_format.assert_called_once_with("ETH/NOK")
+                        with pytest.raises(ValueError, match="order format|BZZ/DKK|invalid pair"):
+                            TradingBot()
+
+
+def test_strategy_uses_ema_in_signals():
+    """
+    GIVEN strategy generates a BUY or SELL signal
+    WHEN we inspect the signal
+    THEN it contains EMA values (short_ema, medium_ema, long_ema) and reason mentions EMA.
+    """
+    from datetime import datetime, timedelta
+
+    from models import Candle
+    from strategy import TradingStrategy
+
+    # Rising prices -> BUY signal
+    base = datetime(2024, 1, 1, 0, 0, 0)
+    prices = [100 + i for i in range(60)]
+    candles = [
+        Candle(timestamp=base + timedelta(hours=i), open=p, high=p, low=p, close=p, volume=100.0)
+        for i, p in enumerate(prices)
+    ]
+
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+    signal = strategy.generate_signal(candles, has_open_trade=False, in_cooldown=False)
+
+    assert signal.short_ema is not None
+    assert signal.medium_ema is not None
+    assert signal.long_ema is not None
+    assert "EMA" in signal.reason or "ema" in signal.reason

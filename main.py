@@ -14,6 +14,18 @@ from strategy import TradingStrategy
 from trader import FiriTrader
 from firebase_store import FirebaseStore, FirebaseLoggingHandler
 from models import Trade, TradeStatus, Signal, SignalType, PortfolioState, Candle
+from settings import (
+    CANDLE_INTERVAL,
+    CANDLE_LIMIT,
+    MIN_FIREBASE_CANDLES,
+    BUY_BALANCE_FRACTION,
+    SECONDS_PER_CANDLE,
+    TRADING_PAIR,
+    SHORT_EMA_PERIOD,
+    MEDIUM_EMA_PERIOD,
+    LONG_EMA_PERIOD,
+    POLL_INTERVAL,
+)
 
 load_dotenv()
 
@@ -34,17 +46,17 @@ class TradingBot:
     
     def __init__(self):
         """Initialize trading bot with all components."""
-        self.pair = os.getenv("TRADING_PAIR", "BTC/DKK")
-        self.poll_interval = int(os.getenv("POLL_INTERVAL", "30"))  # Default 30 seconds
+        self.pair = TRADING_PAIR
+        self.poll_interval = POLL_INTERVAL
         self.trailing_stop_loss_percent = float(os.getenv("TRAILING_STOP_LOSS_PERCENT", "7.0"))
         self.cooldown_candles = int(os.getenv("COOLDOWN_CANDLES", "25"))
         
         # Initialize components
         self.data_fetcher = FiriDataFetcher()
         self.strategy = TradingStrategy(
-            short_ema_period=int(os.getenv("SHORT_EMA_PERIOD", "10")),
-            medium_ema_period=int(os.getenv("MEDIUM_EMA_PERIOD", "20")),
-            long_ema_period=int(os.getenv("LONG_EMA_PERIOD", "50"))
+            short_ema_period=SHORT_EMA_PERIOD,
+            medium_ema_period=MEDIUM_EMA_PERIOD,
+            long_ema_period=LONG_EMA_PERIOD,
         )
         self.trader = FiriTrader()
         self.firebase = FirebaseStore()
@@ -56,7 +68,10 @@ class TradingBot:
             logger.info(f"Using Firi order format: price_decimals={self.trader.price_decimals}, "
                        f"quantity_decimals={self.trader.quantity_decimals}")
         else:
-            logger.warning("Could not fetch order format from Firi, using env/defaults")
+            raise ValueError(
+                f"Could not fetch order format from Firi for pair {self.pair}. "
+                f"Pair may not exist on Firi (e.g. invalid TRADING_PAIR in trading_config.py)."
+            )
 
         # Add Firebase logging handler
         firebase_handler = FirebaseLoggingHandler(self.firebase)
@@ -72,20 +87,20 @@ class TradingBot:
         logger.info(f"Cooldown: {self.cooldown_candles} candles")
     
     def initialize(self) -> None:
-        """Initialize and load initial data (100 candles with 30-minute intervals) at startup."""
-        logger.info("Loading initial candle data (100 candles with 30-minute intervals)...")
+        """Initialize and load initial data at startup."""
+        logger.info(f"Loading initial candle data ({CANDLE_LIMIT} candles, {CANDLE_INTERVAL} interval)...")
         
         # First, try to get candles from Firebase
         try:
-            firebase_candles = self.firebase.get_price_snapshots(pair=self.pair, limit=100)
-            if firebase_candles and len(firebase_candles) >= 50:  # If we have at least 50 candles in Firebase
+            firebase_candles = self.firebase.get_price_snapshots(pair=self.pair, limit=CANDLE_LIMIT)
+            if firebase_candles and len(firebase_candles) >= MIN_FIREBASE_CANDLES:
                 logger.info(f"Found {len(firebase_candles)} candles in Firebase")
                 # Still fetch from API to get latest data, but we have historical data
                 logger.info("Fetching latest candles from API to update data...")
                 api_candles = self.data_fetcher.get_candles(
                     pair=self.pair,
-                    interval="30m",
-                    limit=100
+                    interval=CANDLE_INTERVAL,
+                    limit=CANDLE_LIMIT
                 )
                 if api_candles:
                     logger.info(f"Successfully loaded {len(api_candles)} candles from API")
@@ -94,7 +109,7 @@ class TradingBot:
                         self.firebase.save_price_snapshot(pair=self.pair, candle=candle)
                     return
             else:
-                logger.info(f"Not enough data in Firebase ({len(firebase_candles) if firebase_candles else 0} candles), fetching from API...")
+                logger.info(f"Not enough data in Firebase ({len(firebase_candles) if firebase_candles else 0} < {MIN_FIREBASE_CANDLES}), fetching from API...")
         except Exception as e:
             logger.warning(f"Error loading from Firebase: {e}, fetching from API instead...")
         
@@ -102,8 +117,8 @@ class TradingBot:
         try:
             candles = self.data_fetcher.get_candles(
                 pair=self.pair,
-                interval="30m",
-                limit=100
+                interval=CANDLE_INTERVAL,
+                limit=CANDLE_LIMIT
             )
             if candles:
                 logger.info(f"Successfully loaded {len(candles)} candles from API at startup")
@@ -137,7 +152,7 @@ class TradingBot:
         # Get recent candles to check cooldown
         candles = self.data_fetcher.get_candles(
             pair=self.pair,
-            interval="30m",
+            interval=CANDLE_INTERVAL,
             limit=self.cooldown_candles + 10
         )
         
@@ -147,8 +162,7 @@ class TradingBot:
         # Check if last sell was within cooldown period
         if last_trade.close_timestamp:
             time_since_sell = datetime.now() - last_trade.close_timestamp
-            # Approximate: 1 candle = 1 hour
-            candles_since_sell = int(time_since_sell.total_seconds() / 3600)
+            candles_since_sell = int(time_since_sell.total_seconds() / SECONDS_PER_CANDLE)
             return candles_since_sell < self.cooldown_candles
         
         return False
@@ -223,8 +237,8 @@ class TradingBot:
                 logger.warning(f"Insufficient balance: {balance} {quote_currency}")
                 return
             
-            # Calculate quantity (use 95% of balance to leave some margin)
-            quantity = (balance * 0.95) / current_price
+            # Calculate quantity (use fraction of balance to leave margin)
+            quantity = (balance * BUY_BALANCE_FRACTION) / current_price
             
             # Place buy order
             trade = self.trader.place_buy_order(
@@ -335,11 +349,11 @@ class TradingBot:
         logger.info("Starting trading bot iteration")
         
         try:
-            # Fetch candles (load 100 candles for better historical data)
+            # Fetch candles
             candles = self.data_fetcher.get_candles(
                 pair=self.pair,
-                interval="30m",
-                limit=100
+                interval=CANDLE_INTERVAL,
+                limit=CANDLE_LIMIT
             )
             
             if not candles or len(candles) < self.strategy.long_ema_period:

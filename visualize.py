@@ -16,20 +16,26 @@ from firebase_store import FirebaseStore
 from data_fetcher import FiriDataFetcher
 from indicators import calculate_ema
 from models import Candle, Trade, Signal
+from settings.trading_config import (
+    TRADING_PAIR,
+    SHORT_EMA_PERIOD,
+    MEDIUM_EMA_PERIOD,
+    LONG_EMA_PERIOD,
+)
 
 load_dotenv()
 
 
 class TradingVisualizer:
     """Visualizes trading data using matplotlib."""
-    
+
     def __init__(self):
         self.firebase = FirebaseStore()
         self.data_fetcher = FiriDataFetcher()
-        self.pair = os.getenv("TRADING_PAIR", "BTC/DKK")
-        self.short_ema_period = int(os.getenv("SHORT_EMA_PERIOD", "10"))
-        self.medium_ema_period = int(os.getenv("MEDIUM_EMA_PERIOD", "20"))
-        self.long_ema_period = int(os.getenv("LONG_EMA_PERIOD", "50"))
+        self.pair = TRADING_PAIR
+        self.short_ema_period = SHORT_EMA_PERIOD
+        self.medium_ema_period = MEDIUM_EMA_PERIOD
+        self.long_ema_period = LONG_EMA_PERIOD
     
     def plot_trading_chart(
         self,
