@@ -66,10 +66,24 @@ Botten kører kontinuerligt og:
 
 ## Testing
 
-Kør unit tests for indicators:
+Kør alle tests:
 
 ```bash
-pytest test_indicators.py -v
+pytest
+```
+
+### Pre-push hook (tests før push)
+
+Projektet er konfigureret til at køre tests automatisk før hver `git push`. Hvis tests fejler, bliver push blokeret.
+
+Hooks er allerede konfigureret via `git config core.hooksPath .githooks`. Hvis du kloner projektet, kør:
+
+```bash
+# Windows (PowerShell)
+.\scripts\setup-hooks.ps1
+
+# Linux/macOS
+./scripts/setup-hooks.sh
 ```
 
 ## Firebase Struktur
