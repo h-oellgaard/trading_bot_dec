@@ -3,6 +3,7 @@ Unit tests for the new 3-EMA trading strategy.
 Tests BUY/SELL signals, trailing stop-loss, and cooldown logic.
 No Firebase or Firi API dependencies - pure strategy testing.
 """
+import uuid
 from datetime import datetime, timedelta
 import pytest
 from models import Candle, SignalType
@@ -311,4 +312,149 @@ def test_cooldown_logic():
     
     # With sell at candle 5, we have only ~10 candles after, so cooldown should be True
     assert candles_after_sell_early < cooldown_candles
+
+
+def test_signal_contains_ema_values_on_buy():
+    """
+    GIVEN BUY condition is met
+    WHEN generate_signal returns BUY
+    THEN signal has short_ema, medium_ema, long_ema populated.
+    """
+    prices = [100 + i for i in range(60)]
+    candles = make_candles_from_prices(prices)
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+
+    signal = strategy.generate_signal(candles, has_open_trade=False, in_cooldown=False)
+
+    assert signal.signal_type == SignalType.BUY
+    assert signal.short_ema is not None
+    assert signal.medium_ema is not None
+    assert signal.long_ema is not None
+    assert signal.medium_ema > signal.long_ema  # BUY condition
+
+
+def test_signal_contains_ema_values_on_sell():
+    """
+    GIVEN SELL condition is met
+    WHEN generate_signal returns SELL
+    THEN signal has short_ema, medium_ema, long_ema populated.
+    """
+    prices = [200 - i for i in range(60)]
+    candles = make_candles_from_prices(prices)
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+
+    signal = strategy.generate_signal(candles, has_open_trade=True, in_cooldown=False)
+
+    assert signal.signal_type == SignalType.SELL
+    assert signal.short_ema is not None
+    assert signal.medium_ema is not None
+    assert signal.long_ema is not None
+    assert signal.short_ema < signal.medium_ema  # SELL condition
+
+
+def test_trailing_stop_exact_boundary_7_percent():
+    """
+    GIVEN highest_price = 100, trailing 7%
+    WHEN current_price = 93 (exactly 7% drop)
+    THEN trailing stop SHOULD trigger.
+    """
+    strategy = TradingStrategy()
+    highest = 100.0
+    current = 93.0  # Exactly 7% below
+    trailing = 7.0
+
+    should_trigger, new_highest = strategy.should_trailing_stop_loss(
+        entry_price=90.0,
+        current_price=current,
+        highest_price=highest,
+        trailing_stop_percent=trailing,
+    )
+
+    assert should_trigger
+    assert new_highest == 100.0
+
+
+def test_trailing_stop_just_above_boundary():
+    """
+    GIVEN highest_price = 100, trailing 7%
+    WHEN current_price = 93.1 (~6.9% drop)
+    THEN trailing stop should NOT trigger.
+    """
+    strategy = TradingStrategy()
+    highest = 100.0
+    current = 93.1  # Just under 7% drop
+    trailing = 7.0
+
+    should_trigger, new_highest = strategy.should_trailing_stop_loss(
+        entry_price=90.0,
+        current_price=current,
+        highest_price=highest,
+        trailing_stop_percent=trailing,
+    )
+
+    assert not should_trigger
+    assert new_highest == 100.0
+
+
+def test_generate_signal_empty_candles():
+    """
+    GIVEN empty candles list
+    WHEN generate_signal is called
+    THEN returns HOLD with price 0.0, no crash.
+    """
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+
+    signal = strategy.generate_signal([], has_open_trade=False, in_cooldown=False)
+
+    assert signal.signal_type == SignalType.HOLD
+    assert signal.price == 0.0
+    assert "Insufficient" in signal.reason
+
+
+def test_generate_signal_single_candle():
+    """
+    GIVEN single candle
+    WHEN generate_signal is called
+    THEN returns HOLD, no crash.
+    """
+    candles = make_candles_from_prices([100.0])
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+
+    signal = strategy.generate_signal(candles, has_open_trade=False, in_cooldown=False)
+
+    assert signal.signal_type == SignalType.HOLD
+    assert signal.price == 100.0
+    assert "Insufficient" in signal.reason
+
+
+def test_signal_has_valid_uuid():
+    """
+    GIVEN any signal from generate_signal
+    WHEN we check signal_id
+    THEN it is a valid UUID format.
+    """
+    prices = [100 + i for i in range(60)]
+    candles = make_candles_from_prices(prices)
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+
+    signal = strategy.generate_signal(candles, has_open_trade=False, in_cooldown=False)
+
+    uuid.UUID(signal.signal_id)  # Raises ValueError if invalid
+
+
+def test_signal_timestamp_is_recent():
+    """
+    GIVEN any signal from generate_signal
+    WHEN we check timestamp
+    THEN it is within the last 10 seconds.
+    """
+    prices = [100 + i for i in range(60)]
+    candles = make_candles_from_prices(prices)
+    strategy = TradingStrategy(short_ema_period=5, medium_ema_period=10, long_ema_period=20)
+
+    before = datetime.now()
+    signal = strategy.generate_signal(candles, has_open_trade=False, in_cooldown=False)
+    after = datetime.now()
+
+    assert before <= signal.timestamp <= after + timedelta(seconds=1)
 
