@@ -2,7 +2,9 @@
 Firebase Firestore storage module.
 Pure data storage layer with no business logic.
 """
+import logging
 import os
+import traceback
 from datetime import datetime
 from typing import Optional, List
 from google.cloud import firestore
@@ -11,6 +13,30 @@ from dotenv import load_dotenv
 from models import Trade, Signal, PortfolioState, Candle
 
 load_dotenv()
+
+
+class FirebaseLoggingHandler(logging.Handler):
+    """Logging handler that writes log records to Firebase Firestore."""
+
+    def __init__(self, firebase_store: "FirebaseStore"):
+        super().__init__()
+        self.firebase_store = firebase_store
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            exc_info = None
+            if record.exc_info:
+                exc_info = "".join(traceback.format_exception(*record.exc_info))
+
+            self.firebase_store.save_log(
+                level=record.levelname,
+                logger_name=record.name,
+                message=self.format(record),
+                exc_info=exc_info,
+            )
+        except Exception:
+            # Avoid infinite loop - never let logging failures propagate
+            self.handleError(record)
 
 
 class FirebaseStore:
@@ -64,10 +90,10 @@ class FirebaseStore:
         Returns:
             List of open Trade objects
         """
-        query = self.db.collection("trades").where("status", "==", "open")
+        query = self.db.collection("trades").where(filter=firestore.FieldFilter("status", "==", "open"))
         
         if pair:
-            query = query.where("pair", "==", pair)
+            query = query.where(filter=firestore.FieldFilter("pair", "==", pair))
         
         trades = []
         for doc in query.stream():
@@ -83,7 +109,8 @@ class FirebaseStore:
             trade: Trade object with updated data
         """
         trade_ref = self.db.collection("trades").document(trade.trade_id)
-        trade_ref.update(trade.to_dict())
+        # Use set with merge=True to handle both create and update cases
+        trade_ref.set(trade.to_dict(), merge=True)
     
     def save_signal(self, signal: Signal) -> None:
         """
@@ -92,9 +119,9 @@ class FirebaseStore:
         Args:
             signal: Signal object to save
         """
-        # Use timestamp as document ID for easy querying
-        timestamp_str = signal.timestamp.isoformat()
-        signal_ref = self.db.collection("signals").document(timestamp_str)
+        # Use signal_id as document ID to avoid collisions
+        # If multiple signals generated at same timestamp, they'll have different IDs
+        signal_ref = self.db.collection("signals").document(signal.signal_id)
         signal_ref.set(signal.to_dict())
     
     def get_recent_signals(self, limit: int = 100) -> List[Signal]:
@@ -146,19 +173,22 @@ class FirebaseStore:
         
         return PortfolioState.from_dict(portfolio_doc.to_dict())
     
-    def save_price_snapshot(self, candle: Candle, pair: str) -> None:
+    def save_price_snapshot(self, pair: str, candle: Candle) -> None:
         """
         Save a price snapshot to Firestore.
         
         Args:
-            candle: Candle object to save
             pair: Trading pair
+            candle: Candle object to save
         """
+        # Use timestamp + pair as document ID to avoid collisions
+        # This allows same timestamp for different pairs
         timestamp_str = candle.timestamp.isoformat()
+        doc_id = f"{pair.replace('/', '_')}_{timestamp_str}"
         snapshot_data = candle.to_dict()
         snapshot_data["pair"] = pair
         
-        snapshot_ref = self.db.collection("prices").document(timestamp_str)
+        snapshot_ref = self.db.collection("prices").document(doc_id)
         snapshot_ref.set(snapshot_data)
     
     def get_price_history(self, pair: str, limit: int = 100) -> List[Candle]:
@@ -173,7 +203,7 @@ class FirebaseStore:
             List of Candle objects
         """
         candles = []
-        query = self.db.collection("prices").where("pair", "==", pair).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
+        query = self.db.collection("prices").where(filter=firestore.FieldFilter("pair", "==", pair)).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
         
         for doc in query.stream():
             data = doc.to_dict()
@@ -182,6 +212,20 @@ class FirebaseStore:
         # Return in chronological order
         candles.reverse()
         return candles
+    
+    def get_price_snapshots(self, pair: str, limit: int = 100) -> List[Candle]:
+        """
+        Get price snapshots (candles) from Firestore for a pair.
+        Alias for get_price_history for consistency.
+        
+        Args:
+            pair: Trading pair
+            limit: Maximum number of candles to retrieve
+            
+        Returns:
+            List of Candle objects sorted by timestamp (oldest first)
+        """
+        return self.get_price_history(pair, limit)
     
     def get_all_trades(self, pair: Optional[str] = None, limit: int = 1000) -> List[Trade]:
         """
@@ -197,7 +241,7 @@ class FirebaseStore:
         query = self.db.collection("trades")
         
         if pair:
-            query = query.where("pair", "==", pair)
+            query = query.where(filter=firestore.FieldFilter("pair", "==", pair))
         
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
         
@@ -206,4 +250,62 @@ class FirebaseStore:
             trades.append(Trade.from_dict(doc.to_dict()))
         
         return trades
+    
+    def get_recent_trades(self, pair: Optional[str] = None, limit: int = 10) -> List[Trade]:
+        """
+        Get recent trades, optionally filtered by pair.
+        
+        Args:
+            pair: Optional trading pair to filter by
+            limit: Maximum number of trades to retrieve
+            
+        Returns:
+            List of Trade objects
+        """
+        return self.get_all_trades(pair=pair, limit=limit)
+    
+    def get_closed_trades(self, pair: Optional[str] = None) -> List[Trade]:
+        """
+        Get all closed trades, optionally filtered by pair.
+        
+        Args:
+            pair: Optional trading pair to filter by
+            
+        Returns:
+            List of closed Trade objects
+        """
+        query = self.db.collection("trades").where(filter=firestore.FieldFilter("status", "==", "closed"))
+        
+        if pair:
+            query = query.where(filter=firestore.FieldFilter("pair", "==", pair))
+        
+        query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
+        
+        trades = []
+        for doc in query.stream():
+            trades.append(Trade.from_dict(doc.to_dict()))
+        
+        return trades
+
+    def save_log(self, level: str, logger_name: str, message: str, exc_info: Optional[str] = None) -> None:
+        """
+        Save a log entry to Firestore.
+
+        Args:
+            level: Log level (INFO, WARNING, ERROR, etc.)
+            logger_name: Name of the logger
+            message: Log message
+            exc_info: Optional exception traceback string
+        """
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "level": level,
+            "logger": logger_name,
+            "message": message,
+        }
+        if exc_info:
+            log_data["exc_info"] = exc_info
+
+        # Use auto-generated ID to avoid collisions
+        self.db.collection("logs").add(log_data)
 

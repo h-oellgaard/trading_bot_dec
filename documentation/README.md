@@ -16,12 +16,16 @@ Projektet følger GRASP-principper og Separation of Concerns:
 
 ## Strategi
 
-- **KØB**: Når kort SMA krydser over lang SMA
-- **SÆLG**: Når kort EMA ligger under lang SMA i 3 candles i træk
-- **Pair**: BTC/NOK
+- **KØB**: Når medium EMA går over long EMA og holder sig der i 3 candles i træk
+- **SÆLG**: Når short EMA går under medium EMA og holder sig der i 3 candles i træk
+- **Pair**: BTC/DKK (konfigurerbart via `TRADING_PAIR`)
+- **Indikatorer**: 
+  - Short EMA: 10 perioder (konfigurerbart via `SHORT_EMA_PERIOD`)
+  - Medium EMA: 20 perioder (konfigurerbart via `MEDIUM_EMA_PERIOD`)
+  - Long EMA: 50 perioder (konfigurerbart via `LONG_EMA_PERIOD`)
 - **Max ét åbent trade af gangen**
-- **Take-profit**: 5%
-- **Stop-loss**: 3%
+- **Trailing Stop-Loss**: 7% (konfigurerbart via `TRAILING_STOP_LOSS_PERCENT`)
+- **Cooldown**: 25 candles efter et sell før nyt køb tillades (konfigurerbart via `COOLDOWN_CANDLES`)
 
 ## Installation
 

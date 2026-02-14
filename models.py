@@ -68,6 +68,8 @@ class Trade:
     timestamp: datetime
     take_profit: Optional[float] = None
     stop_loss: Optional[float] = None
+    trailing_stop_loss: Optional[float] = None  # Highest price reached for trailing stop
+    highest_price: Optional[float] = None  # Track highest price for trailing stop
     close_price: Optional[float] = None
     close_timestamp: Optional[datetime] = None
     profit_loss: Optional[float] = None
@@ -85,6 +87,8 @@ class Trade:
             "timestamp": self.timestamp.isoformat(),
             "take_profit": self.take_profit,
             "stop_loss": self.stop_loss,
+            "trailing_stop_loss": self.trailing_stop_loss,
+            "highest_price": self.highest_price,
             "close_price": self.close_price,
             "close_timestamp": self.close_timestamp.isoformat() if self.close_timestamp else None,
             "profit_loss": self.profit_loss,
@@ -104,6 +108,8 @@ class Trade:
             timestamp=datetime.fromisoformat(data["timestamp"]),
             take_profit=float(data["take_profit"]) if data.get("take_profit") else None,
             stop_loss=float(data["stop_loss"]) if data.get("stop_loss") else None,
+            trailing_stop_loss=float(data["trailing_stop_loss"]) if data.get("trailing_stop_loss") else None,
+            highest_price=float(data["highest_price"]) if data.get("highest_price") else None,
             close_price=float(data["close_price"]) if data.get("close_price") else None,
             close_timestamp=datetime.fromisoformat(data["close_timestamp"]) if data.get("close_timestamp") else None,
             profit_loss=float(data["profit_loss"]) if data.get("profit_loss") else None,
@@ -118,9 +124,9 @@ class Signal:
     signal_type: SignalType
     timestamp: datetime
     price: float
-    short_sma: Optional[float] = None
-    long_sma: Optional[float] = None
     short_ema: Optional[float] = None
+    medium_ema: Optional[float] = None
+    long_ema: Optional[float] = None
     reason: Optional[str] = None
     
     def to_dict(self) -> dict:
@@ -130,9 +136,9 @@ class Signal:
             "signal_type": self.signal_type.value,
             "timestamp": self.timestamp.isoformat(),
             "price": self.price,
-            "short_sma": self.short_sma,
-            "long_sma": self.long_sma,
             "short_ema": self.short_ema,
+            "medium_ema": self.medium_ema,
+            "long_ema": self.long_ema,
             "reason": self.reason
         }
     
@@ -144,9 +150,9 @@ class Signal:
             signal_type=SignalType(data["signal_type"]),
             timestamp=datetime.fromisoformat(data["timestamp"]),
             price=float(data["price"]),
-            short_sma=float(data["short_sma"]) if data.get("short_sma") else None,
-            long_sma=float(data["long_sma"]) if data.get("long_sma") else None,
             short_ema=float(data["short_ema"]) if data.get("short_ema") else None,
+            medium_ema=float(data["medium_ema"]) if data.get("medium_ema") else None,
+            long_ema=float(data["long_ema"]) if data.get("long_ema") else None,
             reason=data.get("reason")
         )
 

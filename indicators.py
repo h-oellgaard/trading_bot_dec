@@ -120,6 +120,37 @@ def sma_crossover(candles: List[Candle], short_period: int, long_period: int) ->
     return previous_short_below and current_short_above
 
 
+def ema_crossover(candles: List[Candle], short_period: int, long_period: int) -> bool:
+    """
+    Check if short EMA has crossed above long EMA (golden cross).
+    
+    Args:
+        candles: List of Candle objects (must have at least long_period + 1 candles)
+        short_period: Period for short EMA
+        long_period: Period for long EMA
+        
+    Returns:
+        True if short EMA crossed above long EMA, False otherwise
+    """
+    if len(candles) < long_period + 1:
+        return False
+    
+    short_ema = calculate_ema(candles, short_period)
+    long_ema = calculate_ema(candles, long_period)
+    
+    # Need at least 2 values to detect crossover
+    if short_ema[-1] is None or short_ema[-2] is None:
+        return False
+    if long_ema[-1] is None or long_ema[-2] is None:
+        return False
+    
+    # Check if short EMA crossed above long EMA
+    previous_short_below = short_ema[-2] < long_ema[-2]
+    current_short_above = short_ema[-1] > long_ema[-1]
+    
+    return previous_short_below and current_short_above
+
+
 def ema_below_sma_for_periods(
     candles: List[Candle],
     ema_period: int,
@@ -150,6 +181,76 @@ def ema_below_sma_for_periods(
         if ema_values[idx] is None or sma_values[idx] is None:
             return False
         if ema_values[idx] >= sma_values[idx]:
+            return False
+    
+    return True
+
+
+def ema_below_ema_for_periods(
+    candles: List[Candle],
+    short_ema_period: int,
+    long_ema_period: int,
+    periods: int = 3
+) -> bool:
+    """
+    Check if short EMA has been below long EMA for specified number of periods.
+    
+    Args:
+        candles: List of Candle objects
+        short_ema_period: Period for short EMA calculation
+        long_ema_period: Period for long EMA calculation
+        periods: Number of consecutive periods to check
+        
+    Returns:
+        True if short EMA has been below long EMA for the specified periods, False otherwise
+    """
+    if len(candles) < max(short_ema_period, long_ema_period) + periods - 1:
+        return False
+    
+    short_ema_values = calculate_ema(candles, short_ema_period)
+    long_ema_values = calculate_ema(candles, long_ema_period)
+    
+    # Check last 'periods' values
+    for i in range(periods):
+        idx = len(candles) - 1 - i
+        if short_ema_values[idx] is None or long_ema_values[idx] is None:
+            return False
+        if short_ema_values[idx] >= long_ema_values[idx]:
+            return False
+    
+    return True
+
+
+def ema_above_ema_for_periods(
+    candles: List[Candle],
+    medium_ema_period: int,
+    long_ema_period: int,
+    periods: int = 3
+) -> bool:
+    """
+    Check if medium EMA has been above long EMA for specified number of periods.
+    
+    Args:
+        candles: List of Candle objects
+        medium_ema_period: Period for medium EMA calculation
+        long_ema_period: Period for long EMA calculation
+        periods: Number of consecutive periods to check
+        
+    Returns:
+        True if medium EMA has been above long EMA for the specified periods, False otherwise
+    """
+    if len(candles) < max(medium_ema_period, long_ema_period) + periods - 1:
+        return False
+    
+    medium_ema_values = calculate_ema(candles, medium_ema_period)
+    long_ema_values = calculate_ema(candles, long_ema_period)
+    
+    # Check last 'periods' values
+    for i in range(periods):
+        idx = len(candles) - 1 - i
+        if medium_ema_values[idx] is None or long_ema_values[idx] is None:
+            return False
+        if medium_ema_values[idx] <= long_ema_values[idx]:
             return False
     
     return True

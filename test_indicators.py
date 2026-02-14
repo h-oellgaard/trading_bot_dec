@@ -10,7 +10,8 @@ from indicators import (
     get_latest_sma,
     get_latest_ema,
     sma_crossover,
-    ema_below_sma_for_periods
+    ema_below_sma_for_periods,
+    ema_above_ema_for_periods
 )
 
 
@@ -108,6 +109,16 @@ def test_ema_below_sma_for_periods(sample_candles):
     periods = 3
     
     result = ema_below_sma_for_periods(sample_candles, ema_period, sma_period, periods)
+    assert isinstance(result, bool)
+
+
+def test_ema_above_ema_for_periods(sample_candles):
+    """Test EMA above EMA for periods detection."""
+    medium_ema_period = 3
+    long_ema_period = 5
+    periods = 3
+    
+    result = ema_above_ema_for_periods(sample_candles, medium_ema_period, long_ema_period, periods)
     assert isinstance(result, bool)
 
 
