@@ -156,6 +156,8 @@ class FiriTrader:
             
         except httpx.HTTPError as e:
             raise Exception(f"Failed to fetch balance from Firi API: {e}")
+        except httpx.RequestError as e:
+            raise Exception(f"Failed to fetch balance from Firi API (network/timeout): {e}")
     
     def place_buy_order(
         self,
@@ -229,6 +231,8 @@ class FiriTrader:
             
         except httpx.HTTPError as e:
             raise Exception(f"Failed to place buy order on Firi API: {e}")
+        except httpx.RequestError as e:
+            raise Exception(f"Failed to place buy order on Firi API (network/timeout): {e}")
     
     def place_sell_order(
         self,
@@ -300,6 +304,8 @@ class FiriTrader:
             
         except httpx.HTTPError as e:
             raise Exception(f"Failed to place sell order on Firi API: {e}")
+        except httpx.RequestError as e:
+            raise Exception(f"Failed to place sell order on Firi API (network/timeout): {e}")
     
     def get_open_orders(self, pair: Optional[str] = None) -> list[dict]:
         """
@@ -334,6 +340,8 @@ class FiriTrader:
             
         except httpx.HTTPError as e:
             raise Exception(f"Failed to fetch open orders from Firi API: {e}")
+        except httpx.RequestError as e:
+            raise Exception(f"Failed to fetch open orders from Firi API (network/timeout): {e}")
     
     def cancel_order(self, order_id: str) -> bool:
         """
@@ -360,4 +368,6 @@ class FiriTrader:
             
         except httpx.HTTPError as e:
             raise Exception(f"Failed to cancel order on Firi API: {e}")
+        except httpx.RequestError as e:
+            raise Exception(f"Failed to cancel order on Firi API (network/timeout): {e}")
 
