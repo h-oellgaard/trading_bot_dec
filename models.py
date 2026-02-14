@@ -66,7 +66,6 @@ class Trade:
     quantity: float
     status: TradeStatus
     timestamp: datetime
-    take_profit: Optional[float] = None
     stop_loss: Optional[float] = None
     trailing_stop_loss: Optional[float] = None  # Highest price reached for trailing stop
     highest_price: Optional[float] = None  # Track highest price for trailing stop
@@ -85,7 +84,6 @@ class Trade:
             "quantity": self.quantity,
             "status": self.status.value,
             "timestamp": self.timestamp.isoformat(),
-            "take_profit": self.take_profit,
             "stop_loss": self.stop_loss,
             "trailing_stop_loss": self.trailing_stop_loss,
             "highest_price": self.highest_price,
@@ -106,7 +104,6 @@ class Trade:
             quantity=float(data["quantity"]),
             status=TradeStatus(data["status"]),
             timestamp=datetime.fromisoformat(data["timestamp"]),
-            take_profit=float(data["take_profit"]) if data.get("take_profit") else None,
             stop_loss=float(data["stop_loss"]) if data.get("stop_loss") else None,
             trailing_stop_loss=float(data["trailing_stop_loss"]) if data.get("trailing_stop_loss") else None,
             highest_price=float(data["highest_price"]) if data.get("highest_price") else None,
