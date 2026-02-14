@@ -49,6 +49,15 @@ class TradingBot:
         self.trader = FiriTrader()
         self.firebase = FirebaseStore()
 
+        # Fetch order format from Firi orderbook (price/amount decimals)
+        firi_format = self.data_fetcher.get_order_format(self.pair)
+        if firi_format:
+            self.trader.price_decimals, self.trader.quantity_decimals = firi_format
+            logger.info(f"Using Firi order format: price_decimals={self.trader.price_decimals}, "
+                       f"quantity_decimals={self.trader.quantity_decimals}")
+        else:
+            logger.warning("Could not fetch order format from Firi, using env/defaults")
+
         # Add Firebase logging handler
         firebase_handler = FirebaseLoggingHandler(self.firebase)
         firebase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))

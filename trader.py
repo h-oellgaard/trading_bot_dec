@@ -18,15 +18,30 @@ from models import Trade, TradeStatus
 load_dotenv()
 
 
+def round_price(price: float, decimals: int = 2) -> float:
+    """Round price to specified decimals (e.g. 2 for DKK)."""
+    return round(price, decimals)
+
+
+def round_quantity(quantity: float, decimals: int = 8) -> float:
+    """Round quantity to specified decimals (e.g. 8 for BTC)."""
+    return round(quantity, decimals)
+
+
 class FiriTrader:
     """Handles trade execution via Firi API."""
-    
+
+    PRICE_DECIMALS = 2    # Fiat (DKK) typically 2 decimals
+    QUANTITY_DECIMALS = 8  # BTC typically 8 decimals (satoshi precision)
+
     def __init__(self):
         self.api_key = os.getenv("FIRI_API_KEY")
         self.secret = os.getenv("FIRI_SECRET")
         self.client_id = os.getenv("FIRI_CLIENT_ID")  # Optional client ID
         self.base_url = os.getenv("FIRI_BASE_URL", "https://api.firi.com")
-        
+        self.price_decimals = int(os.getenv("PRICE_DECIMALS", str(self.PRICE_DECIMALS)))
+        self.quantity_decimals = int(os.getenv("QUANTITY_DECIMALS", str(self.QUANTITY_DECIMALS)))
+
         if not self.api_key or not self.secret:
             raise ValueError("FIRI_API_KEY and FIRI_SECRET must be set in .env")
     
@@ -164,6 +179,9 @@ class FiriTrader:
         
         if quantity <= 0:
             raise ValueError("Quantity must be greater than 0")
+
+        price = round_price(price, self.price_decimals)
+        quantity = round_quantity(quantity, self.quantity_decimals)
         
         firi_pair = pair.replace("/", "")
         path = "/v2/orders"
@@ -234,6 +252,9 @@ class FiriTrader:
         
         if quantity <= 0:
             raise ValueError("Quantity must be greater than 0")
+
+        price = round_price(price, self.price_decimals)
+        quantity = round_quantity(quantity, self.quantity_decimals)
         
         firi_pair = pair.replace("/", "")
         path = "/v2/orders"

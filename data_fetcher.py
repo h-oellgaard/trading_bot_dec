@@ -339,6 +339,65 @@ class FiriDataFetcher:
         # If all formats failed, raise exception
         raise Exception(f"Failed to fetch candles from Firi API for pair {pair} with any market format")
     
+    def get_order_format(self, pair: str) -> Optional[tuple[int, int]]:
+        """
+        Fetch order format (price_decimals, amount_decimals) from Firi orderbook.
+        Parses actual bid/ask strings to infer Firi's expected format for orders.
+
+        Returns:
+            (price_decimals, amount_decimals) or None if unavailable
+        """
+        market_formats = [
+            pair.replace("/", ""),
+            pair.replace("/", "-"),
+            pair.replace("/", "").lower(),
+            pair.replace("/", "-").lower(),
+        ]
+        if "DKK" in pair:
+            market_formats.extend([
+                pair.replace("DKK", "NOK").replace("/", ""),
+                pair.replace("DKK", "NOK").replace("/", "-"),
+            ])
+
+        for market_format in market_formats:
+            try:
+                url = f"{self.base_url}/v2/markets/{market_format}/depth"
+                response = httpx.get(url, params={"bids": 1, "asks": 1}, timeout=10.0)
+                if response.status_code == 404:
+                    continue
+                response.raise_for_status()
+                data = response.json()
+
+                bids = data.get("bids", [])
+                if not bids:
+                    continue
+
+                # Orderbook format: [[price, amount], ...] per Firi docs
+                first_bid = bids[0]
+                if isinstance(first_bid, (list, tuple)) and len(first_bid) >= 2:
+                    price_str = str(first_bid[0])
+                    amount_str = str(first_bid[1])
+                elif isinstance(first_bid, dict):
+                    price_str = str(first_bid.get("price", first_bid.get("0", "0")))
+                    amount_str = str(first_bid.get("amount", first_bid.get("1", "0")))
+                else:
+                    continue
+
+                def _decimal_places(s: str) -> int:
+                    s = s.strip()
+                    if "." in s:
+                        return len(s.split(".")[-1].rstrip("0"))
+                    return 0
+
+                price_decimals = _decimal_places(price_str)
+                amount_decimals = _decimal_places(amount_str)
+                return (price_decimals, amount_decimals)
+
+            except Exception as e:
+                logger.debug(f"Order format fetch failed for {market_format}: {e}")
+                continue
+        return None
+
     def get_ticker_price(self, pair: str) -> Optional[float]:
         """
         Get current price from ticker (order book bid/ask).
