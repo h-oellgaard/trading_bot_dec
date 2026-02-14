@@ -121,6 +121,10 @@ def test_9_ema_below_ema_for_periods_true():
     assert result is True
 
 
+def test_pre_push_hook_verification():
+    """Intentional failure - remove after verifying pre-push hook blocks push."""
+    assert False, "Pre-push hook verification: delete this test after confirming it works"
+
 def test_10_ema_above_ema_for_periods_true():
     """ema_above_ema_for_periods returns True when medium above long for 3 periods."""
     # Rising prices: medium EMA(3) stays above long EMA(5) for last 3
