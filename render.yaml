@@ -1,0 +1,32 @@
+# Render Blueprint - Trading Bot Cron Job
+# Kun skriver til Firebase: priser, signaler, EMA. Ingen ordre.
+# Env vars: FIRI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS_JSON (FIRI_SECRET/CLIENT_ID for data-fetch)
+
+services:
+  - type: cron
+    name: trading-bot-cron
+    runtime: python
+    branch: cronjob
+
+    # Hvert 15. minutt (CANDLE_INTERVAL 15m)
+    schedule: "*/15 * * * *"
+
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py --once
+
+    envVars:
+      # Kun Firebase – ingen ordre
+      - key: TRADING_ENABLED
+        value: "false"
+      - key: TRADING_PAIR
+        value: "BTC/DKK"
+      - key: FIREBASE_LOG_LEVEL
+        value: "WARNING"
+      - key: FIRI_API_KEY
+        sync: false
+      - key: FIRI_SECRET
+        sync: false
+      - key: FIRI_CLIENT_ID
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
+        sync: false

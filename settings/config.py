@@ -11,12 +11,18 @@ from settings.trading_config import CANDLE_INTERVAL
 
 load_dotenv()
 CANDLE_LIMIT = int(os.getenv("CANDLE_LIMIT", "100"))
+STARTUP_CANDLE_LIMIT = int(os.getenv("STARTUP_CANDLE_LIMIT", "200"))
 
 # Firebase
 MIN_FIREBASE_CANDLES = int(os.getenv("MIN_FIREBASE_CANDLES", "50"))
 
+# Trading: when False, only fetch prices and log signals (no orders, no balance checks)
+TRADING_ENABLED = os.getenv("TRADING_ENABLED", "false").lower() in ("true", "1", "yes")
+
 # Buy order
 BUY_BALANCE_FRACTION = float(os.getenv("BUY_BALANCE_FRACTION", "0.95"))
 
-# Cooldown (1 candle = N seconds for cooldown calculation)
-SECONDS_PER_CANDLE = int(os.getenv("SECONDS_PER_CANDLE", "3600"))
+# Cooldown (1 candle = N seconds). Derived from CANDLE_INTERVAL unless overridden.
+_INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
+_SECONDS_DEFAULT = _INTERVAL_SECONDS.get(CANDLE_INTERVAL, 3600)
+SECONDS_PER_CANDLE = int(os.getenv("SECONDS_PER_CANDLE", str(_SECONDS_DEFAULT)))

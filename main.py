@@ -1,7 +1,9 @@
 """
 Main trading bot orchestrator.
-Runs continuous loop to fetch data, generate signals, and execute trades.
+Runs continuous loop or single iteration (cron mode).
+Fetches data, generates signals, executes trades when enabled, saves to Firestore.
 """
+import argparse
 import os
 import time
 import logging
@@ -10,6 +12,7 @@ from typing import Optional
 from dotenv import load_dotenv
 
 from data_fetcher import FiriDataFetcher
+from indicators import calculate_ema
 from strategy import TradingStrategy
 from trader import FiriTrader
 from firebase_store import FirebaseStore, FirebaseLoggingHandler
@@ -17,9 +20,10 @@ from models import Trade, TradeStatus, Signal, SignalType, PortfolioState, Candl
 from settings import (
     CANDLE_INTERVAL,
     CANDLE_LIMIT,
-    MIN_FIREBASE_CANDLES,
+    STARTUP_CANDLE_LIMIT,
     BUY_BALANCE_FRACTION,
     SECONDS_PER_CANDLE,
+    TRADING_ENABLED,
     TRADING_PAIR,
     SHORT_EMA_PERIOD,
     MEDIUM_EMA_PERIOD,
@@ -30,13 +34,15 @@ from settings import (
 load_dotenv()
 
 # Configure logging (Firebase handler added in TradingBot.__init__)
+_log_handlers = [logging.StreamHandler()]
+try:
+    _log_handlers.append(logging.FileHandler('trading_bot.log'))
+except OSError:
+    pass  # Skip file log on Render/cron (no writable dir)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('trading_bot.log'),
-        logging.StreamHandler()
-    ]
+    handlers=_log_handlers
 )
 logger = logging.getLogger(__name__)
 
@@ -73,12 +79,15 @@ class TradingBot:
                 f"Pair may not exist on Firi (e.g. invalid TRADING_PAIR in trading_config.py)."
             )
 
-        # Add Firebase logging handler
+        # Add Firebase logging handler (WARNING by default to stay within Firestore limits)
         firebase_handler = FirebaseLoggingHandler(self.firebase)
+        fb_level = os.getenv("FIREBASE_LOG_LEVEL", "WARNING").upper()
+        firebase_handler.setLevel(getattr(logging, fb_level, logging.ERROR))
         firebase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logging.getLogger().addHandler(firebase_handler)
 
         logger.info(f"Trading bot initialized for pair: {self.pair}")
+        logger.info(f"Mode: {'TRADING' if TRADING_ENABLED else 'MONITOR (prices only, no orders)'}")
         logger.info(f"EMA periods: Short={self.strategy.short_ema_period}, "
                    f"Medium={self.strategy.medium_ema_period}, "
                    f"Long={self.strategy.long_ema_period}")
@@ -87,50 +96,58 @@ class TradingBot:
         logger.info(f"Cooldown: {self.cooldown_candles} candles")
     
     def initialize(self) -> None:
-        """Initialize and load initial data at startup."""
-        logger.info(f"Loading initial candle data ({CANDLE_LIMIT} candles, {CANDLE_INTERVAL} interval)...")
-        
-        # First, try to get candles from Firebase
-        try:
-            firebase_candles = self.firebase.get_price_snapshots(pair=self.pair, limit=CANDLE_LIMIT)
-            if firebase_candles and len(firebase_candles) >= MIN_FIREBASE_CANDLES:
-                logger.info(f"Found {len(firebase_candles)} candles in Firebase")
-                # Still fetch from API to get latest data, but we have historical data
-                logger.info("Fetching latest candles from API to update data...")
-                api_candles = self.data_fetcher.get_candles(
-                    pair=self.pair,
-                    interval=CANDLE_INTERVAL,
-                    limit=CANDLE_LIMIT
-                )
-                if api_candles:
-                    logger.info(f"Successfully loaded {len(api_candles)} candles from API")
-                    # Save all candles to Firebase
-                    for candle in api_candles:
-                        self.firebase.save_price_snapshot(pair=self.pair, candle=candle)
-                    return
-            else:
-                logger.info(f"Not enough data in Firebase ({len(firebase_candles) if firebase_candles else 0} < {MIN_FIREBASE_CANDLES}), fetching from API...")
-        except Exception as e:
-            logger.warning(f"Error loading from Firebase: {e}, fetching from API instead...")
-        
-        # If not enough data in Firebase, fetch from API
+        """Initialize and load initial data at startup. Fetches latest candles from API, clears old prices, saves to Firebase."""
+        logger.info(f"Loading initial candle data ({STARTUP_CANDLE_LIMIT} candles, {CANDLE_INTERVAL} interval)...")
+
         try:
             candles = self.data_fetcher.get_candles(
                 pair=self.pair,
                 interval=CANDLE_INTERVAL,
-                limit=CANDLE_LIMIT
+                limit=STARTUP_CANDLE_LIMIT
             )
             if candles:
-                logger.info(f"Successfully loaded {len(candles)} candles from API at startup")
-                # Save all candles to Firebase
+                logger.info(f"Fetched {len(candles)} candles from API")
+                self.firebase.clear_all_prices()  # Remove all pairs to avoid mixing DKK/NOK
                 for candle in candles:
                     self.firebase.save_price_snapshot(pair=self.pair, candle=candle)
+                logger.info(f"Cleared old prices and saved {len(candles)} candles to Firebase")
+
+                # Backfill latest 50 EMA values (short, medium, long) going back from latest
+                self.firebase.clear_ema_for_pair(self.pair)
+                self._backfill_ema_history(candles, limit=50)
             else:
                 logger.warning("No candles loaded at startup")
         except Exception as e:
             logger.error(f"Error loading initial candles from API: {e}", exc_info=True)
             raise
-    
+
+    def _backfill_ema_history(self, candles: list[Candle], limit: int = 50) -> None:
+        """
+        Calculate and save the latest N EMA values (short, medium, long) going back from latest price.
+        """
+        if len(candles) < self.strategy.long_ema_period:
+            logger.warning(
+                f"Insufficient candles for EMA backfill: {len(candles)} < {self.strategy.long_ema_period}"
+            )
+            return
+        short_ema = calculate_ema(candles, self.strategy.short_ema_period)
+        medium_ema = calculate_ema(candles, self.strategy.medium_ema_period)
+        long_ema = calculate_ema(candles, self.strategy.long_ema_period)
+        count = 0
+        for i in range(len(candles) - 1, -1, -1):
+            if count >= limit:
+                break
+            if short_ema[i] is not None and medium_ema[i] is not None and long_ema[i] is not None:
+                self.firebase.save_ema_values(
+                    pair=self.pair,
+                    timestamp=candles[i].timestamp,
+                    short_ema=short_ema[i],
+                    medium_ema=medium_ema[i],
+                    long_ema=long_ema[i],
+                )
+                count += 1
+        logger.info(f"Backfilled {count} EMA values (short, medium, long) to Firebase")
+
     def get_open_trade(self) -> Optional[Trade]:
         """Get the current open trade if any."""
         open_trades = self.firebase.get_open_trades(pair=self.pair)
@@ -359,6 +376,9 @@ class TradingBot:
             if not candles or len(candles) < self.strategy.long_ema_period:
                 logger.warning(f"Insufficient candles: {len(candles) if candles else 0} < {self.strategy.long_ema_period}")
                 return
+
+            # Remove any prices from other pairs (e.g. stray DKK if another bot instance ran)
+            self.firebase.clear_prices_for_other_pairs(keep_pair=self.pair)
             
             # Save price snapshot
             self.save_price_snapshot(candles)
@@ -369,8 +389,8 @@ class TradingBot:
             # Get open trade
             open_trade = self.get_open_trade()
             
-            # Check trailing stop loss if we have an open trade
-            if open_trade:
+            # Check trailing stop loss if we have an open trade (only when trading)
+            if open_trade and TRADING_ENABLED:
                 if self.check_trailing_stop_loss(open_trade, current_price):
                     self.close_trade(open_trade, "Trailing stop loss triggered")
                     open_trade = None  # Trade is now closed
@@ -387,6 +407,15 @@ class TradingBot:
             
             # Save signal to Firebase
             self.firebase.save_signal(signal)
+
+            # Save EMA values to ema_short, ema_medium, ema_long collections
+            self.firebase.save_ema_values(
+                pair=self.pair,
+                timestamp=signal.timestamp,
+                short_ema=signal.short_ema,
+                medium_ema=signal.medium_ema,
+                long_ema=signal.long_ema,
+            )
             
             logger.info(f"Signal generated: {signal.signal_type.value.upper()} - {signal.reason}")
             if signal.short_ema:
@@ -396,14 +425,18 @@ class TradingBot:
             if signal.long_ema:
                 logger.info(f"  Long EMA: {signal.long_ema:.2f}")
             
-            # Execute signal
-            if signal.signal_type == SignalType.BUY and not open_trade:
-                self.execute_buy_signal(signal, current_price)
-            elif signal.signal_type == SignalType.SELL and open_trade:
-                self.close_trade(open_trade, signal.reason)
-            
-            # Update portfolio state
-            self.update_portfolio_state()
+            # Execute signal (only when trading enabled; otherwise just log)
+            if TRADING_ENABLED:
+                if signal.signal_type == SignalType.BUY and not open_trade:
+                    self.execute_buy_signal(signal, current_price)
+                elif signal.signal_type == SignalType.SELL and open_trade:
+                    self.close_trade(open_trade, signal.reason)
+                self.update_portfolio_state()
+            else:
+                if signal.signal_type == SignalType.BUY:
+                    logger.info("(Monitor mode - BUY signal not executed)")
+                elif signal.signal_type == SignalType.SELL and open_trade:
+                    logger.info("(Monitor mode - SELL signal not executed)")
             
             logger.info("Trading bot iteration completed")
             
@@ -430,9 +463,23 @@ class TradingBot:
 
 def main():
     """Main entry point."""
+    parser = argparse.ArgumentParser(description="Trading bot: fetch data, signals, orders → Firestore")
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run one iteration and exit (for cron jobs)",
+    )
+    args = parser.parse_args()
+
     bot = TradingBot()
-    bot.initialize()  # Load initial data (100 candles)
-    bot.run()
+    bot.initialize()  # Load initial data (200 candles), clear prices, save to Firebase
+
+    if args.once:
+        logger.info("Cron mode: running single iteration")
+        bot.run_iteration()
+        logger.info("Cron run complete")
+    else:
+        bot.run()
 
 
 if __name__ == "__main__":

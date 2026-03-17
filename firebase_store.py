@@ -2,12 +2,14 @@
 Firebase Firestore storage module.
 Pure data storage layer with no business logic.
 """
+import json
 import logging
 import os
 import traceback
 from datetime import datetime
 from typing import Optional, List
 from google.cloud import firestore
+from google.oauth2 import service_account
 from dotenv import load_dotenv
 
 from models import Trade, Signal, PortfolioState, Candle
@@ -41,16 +43,37 @@ class FirebaseLoggingHandler(logging.Handler):
 
 class FirebaseStore:
     """Handles all data storage in Firebase Firestore."""
-    
+
     def __init__(self):
-        credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-        if not credentials_path:
-            raise ValueError("GOOGLE_APPLICATION_CREDENTIALS must be set in .env")
-        
-        # Initialize Firestore client
-        # The client will use the service account credentials from the path
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-        self.db = firestore.Client()
+        # Support both JSON env var (Render/cloud) and file path (local)
+        credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
+        credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+
+        if credentials_json:
+            # Render/cloud: credentials as JSON string in env var
+            try:
+                info = json.loads(credentials_json)
+                credentials = service_account.Credentials.from_service_account_info(info)
+                project = info.get("project_id")
+                if not project:
+                    raise ValueError("Service account JSON missing 'project_id'")
+                self.db = firestore.Client(credentials=credentials, project=project)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"GOOGLE_APPLICATION_CREDENTIALS_JSON is invalid JSON: {e}")
+        elif credentials_path:
+            # Local: credentials from file path (file must exist)
+            if not os.path.isfile(credentials_path):
+                raise ValueError(
+                    f"Firebase credentials file not found: {credentials_path}\n"
+                    "On Render: set GOOGLE_APPLICATION_CREDENTIALS_JSON with the full JSON content instead."
+                )
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+            self.db = firestore.Client()
+        else:
+            raise ValueError(
+                "Set GOOGLE_APPLICATION_CREDENTIALS_JSON (full JSON string) for Render, "
+                "or GOOGLE_APPLICATION_CREDENTIALS (file path) for local dev"
+            )
     
     def save_trade(self, trade: Trade) -> None:
         """
@@ -123,6 +146,77 @@ class FirebaseStore:
         # If multiple signals generated at same timestamp, they'll have different IDs
         signal_ref = self.db.collection("signals").document(signal.signal_id)
         signal_ref.set(signal.to_dict())
+
+    def save_ema_values(
+        self,
+        pair: str,
+        timestamp: datetime,
+        short_ema: Optional[float],
+        medium_ema: Optional[float],
+        long_ema: Optional[float],
+    ) -> None:
+        """
+        Save EMA values to ema_short, ema_medium, ema_long collections.
+        Each document has timestamp, value, and pair.
+        """
+        doc_id = f"{pair.replace('/', '_')}_{timestamp.isoformat()}"
+        base_data = {"timestamp": timestamp.isoformat(), "pair": pair}
+
+        if short_ema is not None:
+            self.db.collection("ema_short").document(doc_id).set(
+                {**base_data, "value": short_ema}
+            )
+        if medium_ema is not None:
+            self.db.collection("ema_medium").document(doc_id).set(
+                {**base_data, "value": medium_ema}
+            )
+        if long_ema is not None:
+            self.db.collection("ema_long").document(doc_id).set(
+                {**base_data, "value": long_ema}
+            )
+
+    def clear_ema_for_pair(self, pair: str) -> None:
+        """Delete all EMA documents for a trading pair (short, medium, long)."""
+        for coll in ("ema_short", "ema_medium", "ema_long"):
+            query = self.db.collection(coll).where(
+                filter=firestore.FieldFilter("pair", "==", pair)
+            )
+            batch = self.db.batch()
+            n = 0
+            for doc in query.stream():
+                batch.delete(doc.reference)
+                n += 1
+                if n % 500 == 0:
+                    batch.commit()
+                    batch = self.db.batch()
+            if n % 500 != 0 and n > 0:
+                batch.commit()
+        logging.getLogger(__name__).debug(f"Cleared EMA data for {pair}")
+
+    def get_ema_history(
+        self,
+        collection: str,
+        pair: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[dict]:
+        """
+        Get EMA history from ema_short, ema_medium, or ema_long collection.
+
+        Args:
+            collection: "ema_short", "ema_medium", or "ema_long"
+            pair: Optional pair filter (e.g., "BTC/NOK")
+            limit: Max documents to return
+
+        Returns:
+            List of dicts with timestamp, value, pair
+        """
+        query = self.db.collection(collection).order_by(
+            "timestamp", direction=firestore.Query.DESCENDING
+        )
+        if pair:
+            query = query.where(filter=firestore.FieldFilter("pair", "==", pair))
+        query = query.limit(limit)
+        return [doc.to_dict() for doc in query.stream()]
     
     def get_recent_signals(self, limit: int = 100) -> List[Signal]:
         """
@@ -191,6 +285,69 @@ class FirebaseStore:
         snapshot_ref = self.db.collection("prices").document(doc_id)
         snapshot_ref.set(snapshot_data)
     
+    def clear_prices_for_other_pairs(self, keep_pair: str) -> None:
+        """
+        Delete price snapshots for all pairs except keep_pair.
+        Prevents mixing when multiple bot instances or old config runs.
+        """
+        query = self.db.collection("prices")
+        batch = self.db.batch()
+        count = 0
+        for doc in query.stream():
+            data = doc.to_dict()
+            if data.get("pair") != keep_pair:
+                batch.delete(doc.reference)
+                count += 1
+                if count % 500 == 0:
+                    batch.commit()
+                    batch = self.db.batch()
+        if count % 500 != 0 and count > 0:
+            batch.commit()
+        if count > 0:
+            logging.getLogger(__name__).info(f"Cleared {count} price snapshots for other pairs (keeping {keep_pair})")
+
+    def clear_prices_for_pair(self, pair: str) -> None:
+        """
+        Delete all price snapshots for a trading pair.
+        Used at startup to replace with fresh API data.
+        """
+        query = self.db.collection("prices").where(
+            filter=firestore.FieldFilter("pair", "==", pair)
+        )
+        BATCH_SIZE = 500  # Firestore batch limit
+        batch = self.db.batch()
+        count = 0
+        for doc in query.stream():
+            batch.delete(doc.reference)
+            count += 1
+            if count % BATCH_SIZE == 0:
+                batch.commit()
+                batch = self.db.batch()
+        if count > 0:
+            if count % BATCH_SIZE != 0:
+                batch.commit()
+            logging.getLogger(__name__).info(f"Cleared {count} price snapshots for {pair}")
+
+    def clear_all_prices(self) -> None:
+        """
+        Delete all price snapshots. Used at startup when switching pairs
+        to avoid mixing BTC/DKK and BTC/NOK data in the dashboard.
+        """
+        query = self.db.collection("prices")
+        BATCH_SIZE = 500  # Firestore batch limit
+        batch = self.db.batch()
+        count = 0
+        for doc in query.stream():
+            batch.delete(doc.reference)
+            count += 1
+            if count % BATCH_SIZE == 0:
+                batch.commit()
+                batch = self.db.batch()
+        if count > 0:
+            if count % BATCH_SIZE != 0:
+                batch.commit()
+            logging.getLogger(__name__).info(f"Cleared all {count} price snapshots")
+
     def get_price_history(self, pair: str, limit: int = 100) -> List[Candle]:
         """
         Get price history for a trading pair.

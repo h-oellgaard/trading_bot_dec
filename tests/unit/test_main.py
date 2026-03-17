@@ -52,7 +52,8 @@ def test_firi_format_applied_at_startup():
                         from main import TradingBot
 
                         bot = TradingBot()
-                        mock_data_fetcher.get_order_format.assert_called_once_with("BTC/DKK")
+                        from settings.trading_config import TRADING_PAIR
+                        mock_data_fetcher.get_order_format.assert_called_once_with(TRADING_PAIR)
                         assert mock_trader.price_decimals == 2
                         assert mock_trader.quantity_decimals == 8
 
@@ -74,7 +75,8 @@ def test_firi_format_uses_trading_pair_from_trading_config():
                     from main import TradingBot
 
                     bot = TradingBot()
-                    mock_data_fetcher.get_order_format.assert_called_once_with("BTC/DKK")
+                    from settings.trading_config import TRADING_PAIR
+                    mock_data_fetcher.get_order_format.assert_called_once_with(TRADING_PAIR)
 
 
 def test_ema_periods_from_trading_config():

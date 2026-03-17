@@ -44,25 +44,29 @@ class FiriTrader:
 
         if not self.api_key or not self.secret:
             raise ValueError("FIRI_API_KEY and FIRI_SECRET must be set in .env")
+
+    def _get_server_time(self) -> str:
+        """Fetch current timestamp from Firi API (recommended to avoid clock skew)."""
+        try:
+            resp = httpx.get(f"{self.base_url}/time", timeout=10.0)
+            resp.raise_for_status()
+            data = resp.json()
+            t = data.get("time", time.time())
+            # Firi returns seconds; if value > 1e12 assume milliseconds
+            if isinstance(t, (int, float)) and t > 1e12:
+                t = int(t) // 1000
+            return str(int(t))
+        except Exception:
+            return str(int(time.time()))
     
     def _generate_signature(self, timestamp: str, validity: str, body_dict: dict = None) -> str:
         """
         Generate HMAC signature for Firi API authentication.
-        Firi uses: HMAC_SHA256(JSON.stringify({timestamp, validity, ...requestBody}))
+        Firi uses: HMAC_SHA256(secret, JSON.stringify({timestamp, validity, ...requestBody}))
         """
-        import json
-        
-        # Base body with timestamp and validity as strings
-        signature_body = {
-            "timestamp": timestamp,
-            "validity": validity
-        }
-        
-        # Add request body fields if provided (for POST requests)
+        signature_body = {"timestamp": timestamp, "validity": validity}
         if body_dict:
             signature_body.update(body_dict)
-        
-        # Convert to JSON string (sorted keys for consistency)
         message = json.dumps(signature_body, sort_keys=True, separators=(',', ':'))
         
         signature = hmac.new(
@@ -77,18 +81,15 @@ class FiriTrader:
         Generate authentication headers and query parameters for Firi API.
         Returns: (headers_dict, query_params_dict)
         """
-        # Timestamp in SECONDS (epoch), not milliseconds!
-        timestamp = str(int(time.time()))
-        validity = "2000"  # 2000 seconds validity
-        
+        timestamp = self._get_server_time()
+        validity = "2000"
         signature = self._generate_signature(timestamp, validity, body_dict)
         
         headers = {
+            "Content-Type": "application/json",
             "firi-user-signature": signature,
-            "Content-Type": "application/json"
+            "miraiex-access-key": self.api_key,
         }
-        
-        # Add client ID header (required for HMAC auth)
         if self.client_id:
             headers["firi-user-clientid"] = self.client_id
         else:
@@ -197,14 +198,13 @@ class FiriTrader:
             "amount": str(quantity)  # Firi uses "amount" not "quantity"
         }
         
-        # For POST requests, order data must be included in signature
-        headers, query_params = self._get_headers_and_params("POST", order_data)
+        # Firi supports simple auth (API key only) for orders - same as firipy
+        headers = {"Content-Type": "application/json", "miraiex-access-key": self.api_key}
         
         try:
             response = httpx.post(
                 f"{self.base_url}{path}",
                 headers=headers,
-                params=query_params,
                 json=order_data,
                 timeout=30.0
             )
@@ -230,7 +230,13 @@ class FiriTrader:
             )
             
         except httpx.HTTPError as e:
-            raise Exception(f"Failed to place buy order on Firi API: {e}")
+            err_detail = ""
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    err_detail = f" - {e.response.json()}"
+                except Exception:
+                    err_detail = f" - {e.response.text[:200]}"
+            raise Exception(f"Failed to place buy order on Firi API: {e}{err_detail}")
         except httpx.RequestError as e:
             raise Exception(f"Failed to place buy order on Firi API (network/timeout): {e}")
     
@@ -271,24 +277,19 @@ class FiriTrader:
             "amount": str(quantity)  # Firi uses "amount" not "quantity"
         }
         
-        # For POST requests, order data must be included in signature
-        headers, query_params = self._get_headers_and_params("POST", order_data)
+        headers = {"Content-Type": "application/json", "miraiex-access-key": self.api_key}
         
         try:
             response = httpx.post(
                 f"{self.base_url}{path}",
                 headers=headers,
-                params=query_params,
                 json=order_data,
                 timeout=30.0
             )
             response.raise_for_status()
             data = response.json()
             
-            # Extract order information from response
-            # Firi API returns: {"id": 0} for successful order creation
             order_id = str(data.get("id", str(uuid.uuid4())))
-            # For market orders, we need to fetch the order details to get executed price
             executed_price = float(price) if price else 0.0
             executed_quantity = float(quantity)
             

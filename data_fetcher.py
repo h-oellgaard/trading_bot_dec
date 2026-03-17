@@ -7,7 +7,7 @@ import logging
 import hmac
 import hashlib
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from collections import defaultdict
 import httpx
@@ -27,6 +27,7 @@ class FiriDataFetcher:
         self.api_key = os.getenv("FIRI_API_KEY")
         self.secret = os.getenv("FIRI_SECRET")
         self.base_url = os.getenv("FIRI_BASE_URL", "https://api.firi.com")
+        self._cached_candles: List[Candle] = []
         
         if not self.api_key or not self.secret:
             raise ValueError("FIRI_API_KEY and FIRI_SECRET must be set in .env")
@@ -107,16 +108,18 @@ class FiriDataFetcher:
                     continue
                 
                 if isinstance(timestamp_value, (int, float)):
-                    # Unix timestamp in seconds or milliseconds
+                    # Unix timestamp in seconds or milliseconds (interpret as UTC)
                     ts = timestamp_value
                     if ts > 1e10:  # Milliseconds
                         ts = ts / 1000
-                    trade_time = datetime.fromtimestamp(ts, tz=None)
+                    trade_time = datetime.fromtimestamp(ts, tz=timezone.utc)
                 elif isinstance(timestamp_value, str):
                     # Handle ISO format strings
                     timestamp_str = timestamp_value.replace("Z", "+00:00")
                     try:
                         trade_time = datetime.fromisoformat(timestamp_str)
+                        if trade_time.tzinfo is None:
+                            trade_time = trade_time.replace(tzinfo=timezone.utc)
                     except ValueError:
                         # Try parsing with different formats
                         try:
@@ -235,11 +238,17 @@ class FiriDataFetcher:
                 # Use v2/markets/{market}/history endpoint
                 url = f"{self.base_url}/v2/markets/{market_format}/history"
                 
-                params = {
-                    "interval": interval,
-                    "limit": limit
-                }
+                # Firi API v2/markets/{market}/history returns raw trades only.
+                # No interval param - we aggregate by CANDLE_INTERVAL in _convert_trade_history_to_ohlc.
+                # Optimization: Use self._cached_candles if we already have the history
+                if len(self._cached_candles) >= limit:
+                    # We just need recent trades since the cache was last updated
+                    trade_count = 200  # "Light" fetch
+                else:
+                    # Cold start: request more trades than desired candles to cover the time span
+                    trade_count = max(limit * 10, 1000)
                 
+                params = {"count": min(trade_count, 10_000)}
                 response = httpx.get(url, params=params, timeout=30.0)
                 
                 if response.status_code == 404:
@@ -249,7 +258,7 @@ class FiriDataFetcher:
                 response.raise_for_status()
                 data = response.json()
                 
-                logger.info(f"Successfully fetched candles using market format: {market_format}")
+                logger.info(f"Successfully fetched {len(data)} trades using market format: {market_format} (limit requested: {trade_count})")
                 
                 # Check if response is trade history format (list of trades)
                 if isinstance(data, list) and len(data) > 0:
@@ -261,15 +270,34 @@ class FiriDataFetcher:
                             logger.info(f"Detected OHLC candle format, parsing directly")
                         else:
                             logger.info(f"Detected trade history format, converting to OHLC candles for interval: {interval}")
-                            logger.info(f"First trade sample: {first_item}")
-                            candles = self._convert_trade_history_to_ohlc(data, interval)
-                            logger.info(f"Successfully converted {len(candles)} OHLC candles from trade history")
-                            if len(candles) == 0:
+                            new_candles = self._convert_trade_history_to_ohlc(data, interval)
+                            logger.info(f"Successfully converted {len(new_candles)} OHLC candles from trade history")
+                            
+                            if len(new_candles) == 0:
                                 logger.warning(f"Conversion resulted in 0 candles. Total trades: {len(data)}")
                                 logger.warning(f"Sample trades (first 3): {data[:3]}")
-                            if candles:
-                                candles.sort(key=lambda c: c.timestamp)
-                                return candles
+                                
+                            if new_candles:
+                                new_candles.sort(key=lambda c: c.timestamp)
+                                
+                                # Merge into cache: replace any matching timestamp + append new ones
+                                if not self._cached_candles:
+                                    self._cached_candles = new_candles
+                                else:
+                                    # Create dictionary from existing cache for fast merging/overwriting
+                                    cache_dict = {c.timestamp: c for c in self._cached_candles}
+                                    for nc in new_candles:
+                                        cache_dict[nc.timestamp] = nc
+                                    
+                                    # Convert back to list and sort
+                                    self._cached_candles = list(cache_dict.values())
+                                    self._cached_candles.sort(key=lambda c: c.timestamp)
+                                    
+                                    # Cap memory size to 1000 candles max
+                                    if len(self._cached_candles) > 1000:
+                                        self._cached_candles = self._cached_candles[-1000:]
+                                
+                                return self._cached_candles[-limit:] if len(self._cached_candles) > limit else self._cached_candles
                 
                 # Try to parse as OHLC format
                 candles = []
@@ -278,27 +306,31 @@ class FiriDataFetcher:
                 else:
                     candle_data = data
                 
+                now_utc = datetime.now(timezone.utc)
                 for item in candle_data:
                     try:
                         # Firi API typically returns: [timestamp, open, high, low, close, volume]
                         # Or: {"timestamp": ..., "open": ..., "high": ..., "low": ..., "close": ..., "volume": ...}
+                        # Use UTC to avoid timezone drift
                         if isinstance(item, list) and len(item) >= 5:
                             timestamp_ms, open_price, high_price, low_price, close_price = item[:5]
                             volume = item[5] if len(item) > 5 else 0.0
                             
                             if timestamp_ms > 1e10:  # Milliseconds
-                                timestamp = datetime.fromtimestamp(timestamp_ms / 1000)
+                                timestamp = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
                             else:
-                                timestamp = datetime.fromtimestamp(timestamp_ms)
+                                timestamp = datetime.fromtimestamp(timestamp_ms, tz=timezone.utc)
                         elif isinstance(item, dict):
                             timestamp_str = item.get("timestamp", item.get("time", ""))
                             if isinstance(timestamp_str, (int, float)):
                                 if timestamp_str > 1e10:  # Milliseconds
-                                    timestamp = datetime.fromtimestamp(timestamp_str / 1000)
+                                    timestamp = datetime.fromtimestamp(timestamp_str / 1000, tz=timezone.utc)
                                 else:
-                                    timestamp = datetime.fromtimestamp(timestamp_str)
+                                    timestamp = datetime.fromtimestamp(timestamp_str, tz=timezone.utc)
                             else:
                                 timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                                if timestamp.tzinfo is None:
+                                    timestamp = timestamp.replace(tzinfo=timezone.utc)
                             
                             open_price = float(item.get("open", item.get("o", 0)))
                             high_price = float(item.get("high", item.get("h", 0)))
@@ -308,6 +340,11 @@ class FiriDataFetcher:
                         else:
                             continue
                         
+                        # Skip candles with future timestamps (API bug or misparsing)
+                        if timestamp > now_utc:
+                            logger.warning(f"Skipping candle with future timestamp {timestamp.isoformat()}")
+                            continue
+
                         candle = Candle(
                             timestamp=timestamp,
                             open=open_price,

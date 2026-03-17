@@ -4,6 +4,10 @@
 
 # Python
 __pycache__/
+.firi_tmp/
+
+# Temp/scratch
+Untitled
 *.py[cod]
 *$py.class
 *.so
