@@ -170,7 +170,7 @@ class FiriTrader:
         Place a buy order.
         
         Args:
-            pair: Trading pair (e.g., "BTC/NOK")
+            pair: Trading pair (e.g., "ETH/DKK")
             quantity: Quantity to buy (in base currency, e.g., BTC)
             price: Required price (Firi API requires price even for market orders)
             
@@ -250,7 +250,7 @@ class FiriTrader:
         Place a sell order.
         
         Args:
-            pair: Trading pair (e.g., "BTC/NOK")
+            pair: Trading pair (e.g., "ETH/DKK")
             quantity: Quantity to sell (in base currency, e.g., BTC)
             price: Required price (Firi API requires price even for market orders)
             

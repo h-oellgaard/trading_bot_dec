@@ -73,7 +73,7 @@
 
 ### TC-014: Fetch Candles - Multiple Market Formats
 **Beskrivelse:** Prøv forskellige market formats hvis første fejler
-**Input:** BTCDKK returnerer 404, prøv BTC-DKK, btcdkk, etc.
+**Input:** ETHDKK returnerer 404, prøv ETH-DKK, ethdkk, etc.
 **Forventet:** Succes med en af formatene eller exception hvis alle fejler
 
 ### TC-015: Fetch Candles - Handle Created_at Timestamps
@@ -83,7 +83,7 @@
 
 ### TC-016: Get Current Price - Success
 **Beskrivelse:** Hent seneste pris for et trading pair
-**Input:** BTC/DKK, interval=1m, limit=1
+**Input:** ETH/DKK, interval=1m, limit=1
 **Forventet:** Float værdi med seneste close price
 
 ### TC-017: Get Current Price - No Data
@@ -100,7 +100,7 @@
 
 ### TC-019: Get Open Trades - With Pair Filter
 **Beskrivelse:** Hent alle åbne trades for et specifikt pair
-**Input:** 3 open trades, 2 for BTC/DKK, 1 for ETH/DKK, pair='BTC/DKK'
+**Input:** 3 open trades, 2 for ETH/DKK, 1 for ETH/NOK, pair='ETH/DKK'
 **Forventet:** 2 trades returneret
 
 ### TC-020: Get Price Snapshots - Ordering

@@ -207,7 +207,7 @@ class FiriDataFetcher:
         Fetch OHLC candles from Firi API.
         
         Args:
-            pair: Trading pair (e.g., "BTC/DKK")
+            pair: Trading pair (e.g., "ETH/DKK")
             interval: Candle interval (e.g., "1h", "30m", "4h", "1d")
             limit: Maximum number of candles to fetch
             start_time: Optional start time
@@ -218,18 +218,11 @@ class FiriDataFetcher:
         """
         # Try different market formats
         market_formats = [
-            pair.replace("/", ""),  # BTCDKK
-            pair.replace("/", "-"),  # BTC-DKK
-            pair.replace("/", "").lower(),  # btcdkk
-            pair.replace("/", "-").lower(),  # btc-dkk
+            pair.replace("/", ""),  # ETHDKK
+            pair.replace("/", "-"),  # ETH-DKK
+            pair.replace("/", "").lower(),  # ethdkk
+            pair.replace("/", "-").lower(),  # eth-dkk
         ]
-        
-        # Also try NOK if DKK doesn't work
-        if "DKK" in pair:
-            market_formats.extend([
-                pair.replace("DKK", "NOK").replace("/", ""),  # BTCNOK
-                pair.replace("DKK", "NOK").replace("/", "-"),  # BTC-NOK
-            ])
         
         logger.info(f"Trying to fetch candles for pair {pair}, will try formats: {market_formats}")
         
@@ -390,12 +383,6 @@ class FiriDataFetcher:
             pair.replace("/", "").lower(),
             pair.replace("/", "-").lower(),
         ]
-        if "DKK" in pair:
-            market_formats.extend([
-                pair.replace("DKK", "NOK").replace("/", ""),
-                pair.replace("DKK", "NOK").replace("/", "-"),
-            ])
-
         for market_format in market_formats:
             try:
                 url = f"{self.base_url}/v2/markets/{market_format}/depth"
@@ -442,7 +429,7 @@ class FiriDataFetcher:
         Public endpoint, no auth required.
 
         Args:
-            pair: Trading pair (e.g., "BTC/DKK")
+            pair: Trading pair (e.g., "ETH/DKK")
 
         Returns:
             Mid-price (bid+ask)/2 or None if unavailable
@@ -453,12 +440,6 @@ class FiriDataFetcher:
             pair.replace("/", "").lower(),
             pair.replace("/", "-").lower(),
         ]
-        if "DKK" in pair:
-            market_formats.extend([
-                pair.replace("DKK", "NOK").replace("/", ""),
-                pair.replace("DKK", "NOK").replace("/", "-"),
-            ])
-
         for market_format in market_formats:
             try:
                 url = f"{self.base_url}/v2/markets/{market_format}/ticker"
@@ -483,26 +464,16 @@ class FiriDataFetcher:
     def get_current_price(self, pair: str) -> Optional[float]:
         """
         Get current price for a trading pair.
-        Tries ticker first (live order book), then falls back to trade history.
+        Uses ticker only (live order book) for the requested pair.
         """
-        price = self.get_ticker_price(pair)
-        if price is not None:
-            return price
-        try:
-            candles = self.get_candles(pair=pair, interval="1m", limit=1)
-            if candles:
-                return candles[-1].close
-            return None
-        except Exception as e:
-            logger.warning(f"Error getting current price: {e}")
-            return None
+        return self.get_ticker_price(pair)
     
     def get_latest_price(self, pair: str) -> float:
         """
         Get the latest price for a trading pair.
         
         Args:
-            pair: Trading pair (e.g., "BTC/NOK")
+            pair: Trading pair (e.g., "ETH/DKK")
             
         Returns:
             Latest price as float

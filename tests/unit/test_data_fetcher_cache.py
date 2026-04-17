@@ -32,7 +32,7 @@ def test_data_fetcher_cold_start_caching():
         assert len(fetcher._cached_candles) == 0
         
         limit = 10
-        fetcher.get_candles("BTC/DKK", interval="1h", limit=limit)
+        fetcher.get_candles("ETH/DKK", interval="1h", limit=limit)
         
         # Cold start should ask for max trades
         called_url = mock_get.call_args[0][0]
@@ -67,11 +67,11 @@ def test_data_fetcher_light_fetch_caching():
         limit = 2
         
         # Call 1
-        res1 = fetcher.get_candles("BTC/DKK", interval="1h", limit=limit)
+        res1 = fetcher.get_candles("ETH/DKK", interval="1h", limit=limit)
         assert mock_get.call_args_list[0][1]["params"]["count"] >= limit * 10
         
         # Call 2
-        res2 = fetcher.get_candles("BTC/DKK", interval="1h", limit=limit)
+        res2 = fetcher.get_candles("ETH/DKK", interval="1h", limit=limit)
         assert mock_get.call_args_list[1][1]["params"]["count"] == 200
         
         # Verify merge logic works (timestamp 1670008000 is merged correctly, updated close price to 125, volume 3)

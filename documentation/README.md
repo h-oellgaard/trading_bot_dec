@@ -18,7 +18,7 @@ Projektet følger GRASP-principper og Separation of Concerns:
 
 - **KØB**: Når medium EMA går over long EMA og holder sig der i 3 candles i træk
 - **SÆLG**: Når short EMA går under medium EMA og holder sig der i 3 candles i træk
-- **Pair**: BTC/DKK (konfigurerbart via `TRADING_PAIR`)
+- **Pair**: ETH/DKK (konfigurerbart via `TRADING_PAIR`)
 - **Indikatorer**: 
   - Short EMA: 10 perioder (konfigurerbart via `SHORT_EMA_PERIOD`)
   - Medium EMA: 20 perioder (konfigurerbart via `MEDIUM_EMA_PERIOD`)

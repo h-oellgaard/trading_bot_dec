@@ -399,7 +399,7 @@ export class PriceService {
               low: parseFloat(item.low),
               close: parseFloat(item.close),
               volume: parseFloat(item.volume || 0),
-              pair: item.pair || 'BTC/DKK'
+              pair: item.pair || 'ETH/DKK'
             });
           } catch (error) {
             console.warn('Invalid price data:', item, error);

@@ -204,7 +204,7 @@ class FirebaseStore:
 
         Args:
             collection: "ema_short", "ema_medium", or "ema_long"
-            pair: Optional pair filter (e.g., "BTC/NOK")
+            pair: Optional pair filter (e.g., "ETH/DKK")
             limit: Max documents to return
 
         Returns:
@@ -331,7 +331,7 @@ class FirebaseStore:
     def clear_all_prices(self) -> None:
         """
         Delete all price snapshots. Used at startup when switching pairs
-        to avoid mixing BTC/DKK and BTC/NOK data in the dashboard.
+        to avoid mixing different pairs (e.g., ETH/DKK and ETH/NOK) in the dashboard.
         """
         query = self.db.collection("prices")
         BATCH_SIZE = 500  # Firestore batch limit

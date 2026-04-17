@@ -15,7 +15,7 @@ def test_live_data_fetcher_caching_and_limits():
     
     # 1. First run, cold start
     limit = 50
-    candles_first = fetcher.get_candles("BTC/DKK", interval="1h", limit=limit)
+    candles_first = fetcher.get_candles("ETH/DKK", interval="1h", limit=limit)
     
     assert len(candles_first) > 0
     assert len(candles_first) <= len(fetcher._cached_candles)
@@ -23,7 +23,7 @@ def test_live_data_fetcher_caching_and_limits():
     first_cache_len = len(fetcher._cached_candles)
     
     # 2. Second run, light fetch
-    candles_second = fetcher.get_candles("BTC/DKK", interval="1h", limit=limit)
+    candles_second = fetcher.get_candles("ETH/DKK", interval="1h", limit=limit)
     
     # Cache length should be at least same, max length is 1000
     assert len(fetcher._cached_candles) >= first_cache_len

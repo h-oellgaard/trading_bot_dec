@@ -118,7 +118,7 @@ FIRI_BASE_URL=https://api.firi.com
 
 GOOGLE_APPLICATION_CREDENTIALS=/home/tradingbot/trading-bot/service-account-key.json
 
-TRADING_PAIR=BTC/NOK
+TRADING_PAIR=ETH/DKK
 SHORT_EMA_PERIOD=10
 MEDIUM_EMA_PERIOD=20
 LONG_EMA_PERIOD=50
@@ -422,7 +422,7 @@ python3 -c "from firebase_store import FirebaseStore; fs = FirebaseStore(); prin
 
 ```bash
 # Test Firi API connection
-python3 -c "from data_fetcher import FiriDataFetcher; df = FiriDataFetcher(); print(df.get_latest_price('BTC/NOK'))"
+python3 -c "from data_fetcher import FiriDataFetcher; df = FiriDataFetcher(); print(df.get_latest_price('ETH/DKK'))"
 ```
 
 ---

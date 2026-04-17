@@ -2,7 +2,7 @@
 
 ## Systemarkitektur
 
-Firi Trading Bot er en automatiseret cryptocurrency trading bot bygget i Python, der handler BTC/DKK via Firi API og gemmer alle data i Firebase Firestore. Systemet følger GRASP-principper og Separation of Concerns med en modulær arkitektur.
+Firi Trading Bot er en automatiseret cryptocurrency trading bot bygget i Python, der handler ETH/DKK via Firi API og gemmer alle data i Firebase Firestore. Systemet følger GRASP-principper og Separation of Concerns med en modulær arkitektur.
 
 **Kernemoduler:**
 - `data_fetcher.py`: Henter OHLC candle data fra Firi API v2/markets/{market}/history endpoint. Konverterer trade history til OHLC candles med 30-minutters intervaller ved at gruppere trades og beregne open, high, low, close og volume for hvert interval.

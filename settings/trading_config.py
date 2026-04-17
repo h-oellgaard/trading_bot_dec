@@ -1,5 +1,5 @@
 # Trading Configuration (non-sensitive, version-controlled)
-TRADING_PAIR = "BTC/DKK"
+TRADING_PAIR = "ETH/DKK"
 SHORT_EMA_PERIOD = 5
 MEDIUM_EMA_PERIOD = 15
 LONG_EMA_PERIOD = 30

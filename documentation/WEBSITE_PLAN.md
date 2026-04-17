@@ -27,7 +27,7 @@ Et simpelt, responsivt website der viser trading bot data fra Firebase Firestore
    - `timestamp`: ISO datetime string
    - `open`, `high`, `low`, `close`: float
    - `volume`: float
-   - `pair`: string (f.eks. "BTC/DKK")
+   - `pair`: string (f.eks. "ETH/DKK")
 
 2. **`signals/`** - Trading signals
    - `timestamp`: ISO datetime string

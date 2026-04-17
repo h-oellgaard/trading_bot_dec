@@ -33,7 +33,7 @@ def test_get_order_format_parses_orderbook():
 
     with patch("data_fetcher.httpx.get", return_value=mock_response):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result == (2, 8)
 
@@ -54,7 +54,7 @@ def test_get_order_format_handles_different_precision():
 
     with patch("data_fetcher.httpx.get", return_value=mock_response):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/NOK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result == (4, 6)
 
@@ -70,7 +70,7 @@ def test_get_order_format_returns_none_on_404():
 
     with patch("data_fetcher.httpx.get", return_value=mock_response):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result is None
 
@@ -88,7 +88,7 @@ def test_get_order_format_empty_bids_returns_none():
 
     with patch("data_fetcher.httpx.get", return_value=mock_response):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result is None
 
@@ -109,7 +109,7 @@ def test_get_order_format_handles_dict_bid_format():
 
     with patch("data_fetcher.httpx.get", return_value=mock_response):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result == (2, 8)
 
@@ -130,7 +130,7 @@ def test_get_order_format_integer_price():
 
     with patch("data_fetcher.httpx.get", return_value=mock_response):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     # "500000" has 0 decimals; "0.00100000" -> "001" after rstrip = 3 decimals
     assert result == (0, 3)
@@ -155,7 +155,7 @@ def test_get_order_format_retries_on_404_then_succeeds():
 
     with patch("data_fetcher.httpx.get", side_effect=[mock_404, mock_200]):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result == (2, 8)
 
@@ -170,6 +170,6 @@ def test_get_order_format_handles_http_error():
 
     with patch("data_fetcher.httpx.get", side_effect=httpx.HTTPError("Connection error")):
         fetcher = FiriDataFetcher()
-        result = fetcher.get_order_format("BTC/DKK")
+        result = fetcher.get_order_format("ETH/DKK")
 
     assert result is None

@@ -49,9 +49,9 @@ def main():
     except Exception as e:
         print(f"Feil ved åpne ordre: {e}")
 
-    print("\n=== ORDREHISTORIKK (BTCDKK, siste 20) ===")
+    print("\n=== ORDREHISTORIKK (ETHDKK, siste 20) ===")
     try:
-        hist = api.orders_market_history("BTCDKK", count=20)
+        hist = api.orders_market_history("ETHDKK", count=20)
         if isinstance(hist, list) and hist:
             for o in hist:
                 if isinstance(o, dict):

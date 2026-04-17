@@ -279,7 +279,7 @@ class TradingBot:
         """Update and save portfolio state to Firebase."""
         try:
             # Get balances
-            base_currency = self.pair.split('/')[0]  # e.g., "BTC"
+            base_currency = self.pair.split('/')[0]  # e.g., "ETH"
             quote_currency = self.pair.split('/')[1]  # e.g., "DKK"
             
             balance_btc = self.trader.get_balance(currency=base_currency)

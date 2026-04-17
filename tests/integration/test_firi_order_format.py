@@ -12,7 +12,7 @@ from trader import round_price, round_quantity
 
 # Firi public depth endpoint - no auth required
 FIRI_DEPTH_URL = "https://api.firi.com/v2/markets/{market}/depth"
-MARKET_FORMATS = ["BTCDKK", "BTCNOK", "btcdkk", "btc-dkk"]
+MARKET_FORMATS = ["ETHDKK", "ethdkk", "eth-dkk"]
 
 
 def _fetch_firi_orderbook() -> tuple[dict | None, str | None]:
@@ -98,7 +98,7 @@ def test_firi_orderbook_format_matches_order_spec():
 def test_firi_get_order_format_matches_live_orderbook():
     """
     GIVEN FiriDataFetcher with env credentials
-    WHEN get_order_format is called for BTC/DKK
+    WHEN get_order_format is called for ETH/DKK
     THEN returns format matching live Firi orderbook.
     """
     data, err = _fetch_firi_orderbook()
@@ -123,7 +123,7 @@ def test_firi_get_order_format_matches_live_orderbook():
     from data_fetcher import FiriDataFetcher
 
     fetcher = FiriDataFetcher()
-    result = fetcher.get_order_format("BTC/DKK")
+    result = fetcher.get_order_format("ETH/DKK")
 
     assert result is not None, "get_order_format should return format when Firi is reachable"
     assert result[0] == expected_price_decimals, (

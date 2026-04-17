@@ -5,7 +5,7 @@ Usage: python scripts/test_trade.py [amount]
   amount: Spend this much in quote currency (default 200), including 0.7% Firi fee.
 
 Uses TRADING_PAIR from trading_config.
-For 200 DKK test: set TRADING_PAIR = "BTC/DKK" in trading_config.py.
+For 200 DKK test: set TRADING_PAIR = "ETH/DKK" in trading_config.py.
 """
 import sys
 import os
@@ -33,6 +33,7 @@ def main():
         print("Amount must be positive")
         sys.exit(1)
 
+    base_currency = TRADING_PAIR.split("/")[0]
     quote_currency = TRADING_PAIR.split("/")[1]
     print(f"Test trade: {amount_quote} {quote_currency} (including {FIRI_FEE_PERCENT}% fee)")
     print(f"Pair: {TRADING_PAIR}")
@@ -59,7 +60,7 @@ def main():
     quantity = amount_for_purchase / price
     fee_amount = amount_quote - amount_for_purchase
 
-    print(f"Quantity: {quantity:.8f} BTC")
+    print(f"Quantity: {quantity:.8f} {base_currency}")
     print(f"Fee (~{FIRI_FEE_PERCENT}%): {fee_amount:.2f} {quote_currency}")
     print(f"Total: {amount_quote:.2f} {quote_currency}")
 
@@ -82,7 +83,7 @@ def main():
         price=price,
     )
     print(f"\nOrder placed: {trade.trade_id}")
-    print(f"  {trade.quantity:.8f} BTC @ {trade.price:.2f} {quote_currency}")
+    print(f"  {trade.quantity:.8f} {base_currency} @ {trade.price:.2f} {quote_currency}")
 
 
 if __name__ == "__main__":

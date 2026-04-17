@@ -19,7 +19,7 @@ services:
       - key: TRADING_ENABLED
         value: "false"
       - key: TRADING_PAIR
-        value: "BTC/DKK"
+        value: "ETH/DKK"
       - key: FIREBASE_LOG_LEVEL
         value: "WARNING"
       - key: FIRI_API_KEY
