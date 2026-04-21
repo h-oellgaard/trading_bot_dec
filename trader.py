@@ -28,6 +28,11 @@ def round_quantity(quantity: float, decimals: int = 8) -> float:
     return round(quantity, decimals)
 
 
+def format_fixed_decimals(value: float, decimals: int) -> str:
+    """Format a number with exactly `decimals` fractional digits (stable for APIs, no float str noise)."""
+    return f"{value:.{decimals}f}"
+
+
 class FiriTrader:
     """Handles trade execution via Firi API."""
 
@@ -194,8 +199,8 @@ class FiriTrader:
         order_data = {
             "market": firi_pair,
             "type": "bid",  # "bid" = buy order
-            "price": str(price),  # Price is required by Firi API
-            "amount": str(quantity)  # Firi uses "amount" not "quantity"
+            "price": format_fixed_decimals(price, self.price_decimals),
+            "amount": format_fixed_decimals(quantity, self.quantity_decimals),
         }
         
         # Firi supports simple auth (API key only) for orders - same as firipy
@@ -273,8 +278,8 @@ class FiriTrader:
         order_data = {
             "market": firi_pair,
             "type": "ask",  # "ask" = sell order
-            "price": str(price),  # Price is required by Firi API
-            "amount": str(quantity)  # Firi uses "amount" not "quantity"
+            "price": format_fixed_decimals(price, self.price_decimals),
+            "amount": format_fixed_decimals(quantity, self.quantity_decimals),
         }
         
         headers = {"Content-Type": "application/json", "miraiex-access-key": self.api_key}

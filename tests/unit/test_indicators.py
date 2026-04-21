@@ -11,8 +11,10 @@ from indicators import (
     get_latest_ema,
     sma_crossover,
     ema_below_sma_for_periods,
-    ema_above_ema_for_periods
+    ema_above_ema_for_periods,
+    detect_ema_cross_and_confirm
 )
+import indicators
 
 
 @pytest.fixture
@@ -138,4 +140,48 @@ def test_insufficient_data():
     
     ema = calculate_ema(candles, period=10)
     assert all(v is None for v in ema)
+
+
+def test_detect_ema_cross_and_confirm():
+    """
+    Test the detect_ema_cross_and_confirm function with a predefined pattern.
+
+    Need at least max(short_period, medium_period) + confirmation_period candles
+    (22 here) so the implementation's length guard passes; EMA series are mocked.
+    """
+    n = 22
+    base = datetime(2024, 1, 1, 0, 0, 0)
+    candles = [
+        Candle(
+            timestamp=base + timedelta(hours=i),
+            open=100.0,
+            high=100.0,
+            low=100.0,
+            close=100.0,
+        )
+        for i in range(n)
+    ]
+
+    # Last three indices: short above medium at -3, cross at -2, stay below at -1
+    short_ema = [110.0] * (n - 3) + [105.0, 99.0, 98.0]
+    medium_ema = [100.0] * (n - 3) + [100.0, 100.0, 101.0]
+
+    def mock_calculate_ema(candles, period):
+        return short_ema if period == 10 else medium_ema
+
+    from indicators import calculate_ema
+
+    original_calculate_ema = calculate_ema
+    indicators.calculate_ema = mock_calculate_ema
+
+    try:
+        result = detect_ema_cross_and_confirm(
+            candles,
+            short_period=10,
+            medium_period=20,
+            confirmation_period=2,
+        )
+        assert result is True, "The function failed to detect the crossover and confirmation."
+    finally:
+        indicators.calculate_ema = original_calculate_ema
 

@@ -4,9 +4,13 @@ Uses mocks to avoid Firebase/Firi API dependencies.
 """
 import logging
 import os
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from models import Signal, SignalType, Trade, TradeStatus
+from trader import round_quantity
 
 
 def _mock_firebase_handler():
@@ -103,6 +107,52 @@ def test_ema_periods_from_trading_config():
                     assert bot.strategy.short_ema_period == SHORT_EMA_PERIOD
                     assert bot.strategy.medium_ema_period == MEDIUM_EMA_PERIOD
                     assert bot.strategy.long_ema_period == LONG_EMA_PERIOD
+
+
+def test_execute_buy_signal_uses_fixed_quote_amount_and_fee():
+    """
+    GIVEN BUY_QUOTE_AMOUNT=200, FIRI_FEE_PERCENT=0.7, and sufficient DKK balance
+    WHEN execute_buy_signal runs at a known price
+    THEN quantity matches test_trade formula: (200/1.007)/price.
+    """
+    mock_data_fetcher = MagicMock()
+    mock_data_fetcher.get_order_format.return_value = (2, 8)
+    mock_trader = MagicMock()
+    mock_trader.get_balance.return_value = 500.0
+    mock_trader.place_buy_order.return_value = Trade(
+        trade_id="1",
+        pair="ETH/DKK",
+        side="buy",
+        price=10000.0,
+        quantity=0.01,
+        status=TradeStatus.OPEN,
+        timestamp=datetime.now(),
+    )
+
+    with patch("main.FiriDataFetcher", return_value=mock_data_fetcher):
+        with patch("main.FiriTrader", return_value=mock_trader):
+            with patch("main.FirebaseStore", MagicMock()):
+                with patch("main.FirebaseLoggingHandler", return_value=_mock_firebase_handler()):
+                    with patch("main.BUY_QUOTE_AMOUNT", 200.0):
+                        with patch("main.FIRI_FEE_PERCENT", 0.7):
+                            from main import TradingBot
+
+                            bot = TradingBot()
+                            signal = Signal(
+                                signal_id="s1",
+                                signal_type=SignalType.BUY,
+                                timestamp=datetime.now(),
+                                price=10000.0,
+                                reason="test",
+                            )
+                            bot.execute_buy_signal(signal, current_price=10000.0)
+
+    expected_qty = round_quantity((200.0 / 1.007) / 10000.0, decimals=8)
+    mock_trader.place_buy_order.assert_called_once()
+    call = mock_trader.place_buy_order.call_args
+    assert call.kwargs["pair"] == bot.pair
+    assert call.kwargs["price"] == 10000.0
+    assert call.kwargs["quantity"] == expected_qty
 
 
 def test_invalid_trading_pair_raises_error():

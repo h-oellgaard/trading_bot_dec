@@ -44,6 +44,8 @@ class FirebaseLoggingHandler(logging.Handler):
 class FirebaseStore:
     """Handles all data storage in Firebase Firestore."""
 
+    MAX_SERIES_ENTRIES_PER_PAIR = int(os.getenv("MAX_SERIES_ENTRIES_PER_PAIR", "150"))
+
     def __init__(self):
         # Support both JSON env var (Render/cloud) and file path (local)
         credentials_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
@@ -166,13 +168,28 @@ class FirebaseStore:
             self.db.collection("ema_short").document(doc_id).set(
                 {**base_data, "value": short_ema}
             )
+            self._trim_collection_for_pair(
+                "ema_short",
+                pair,
+                self.MAX_SERIES_ENTRIES_PER_PAIR,
+            )
         if medium_ema is not None:
             self.db.collection("ema_medium").document(doc_id).set(
                 {**base_data, "value": medium_ema}
             )
+            self._trim_collection_for_pair(
+                "ema_medium",
+                pair,
+                self.MAX_SERIES_ENTRIES_PER_PAIR,
+            )
         if long_ema is not None:
             self.db.collection("ema_long").document(doc_id).set(
                 {**base_data, "value": long_ema}
+            )
+            self._trim_collection_for_pair(
+                "ema_long",
+                pair,
+                self.MAX_SERIES_ENTRIES_PER_PAIR,
             )
 
     def clear_ema_for_pair(self, pair: str) -> None:
@@ -210,12 +227,16 @@ class FirebaseStore:
         Returns:
             List of dicts with timestamp, value, pair
         """
-        query = self.db.collection(collection).order_by(
-            "timestamp", direction=firestore.Query.DESCENDING
-        )
         if pair:
-            query = query.where(filter=firestore.FieldFilter("pair", "==", pair))
-        query = query.limit(limit)
+            return [
+                doc.to_dict()
+                for doc in self._pair_docs_newest_first(collection, pair)[:limit]
+            ]
+        query = (
+            self.db.collection(collection)
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+        )
         return [doc.to_dict() for doc in query.stream()]
     
     def get_recent_signals(self, limit: int = 100) -> List[Signal]:
@@ -284,6 +305,54 @@ class FirebaseStore:
         
         snapshot_ref = self.db.collection("prices").document(doc_id)
         snapshot_ref.set(snapshot_data)
+        self._trim_collection_for_pair(
+            "prices",
+            pair,
+            self.MAX_SERIES_ENTRIES_PER_PAIR,
+        )
+
+    def _pair_docs_newest_first(self, collection: str, pair: str) -> List:
+        """
+        Load all documents for a pair and sort by timestamp descending.
+
+        Uses an equality filter only on ``pair`` (automatic single-field index),
+        then sorts in memory. Firestore requires a composite index for
+        ``where(pair)`` + ``order_by(timestamp)`` on the server, which we avoid.
+        """
+        query = self.db.collection(collection).where(
+            filter=firestore.FieldFilter("pair", "==", pair)
+        )
+        docs = list(query.stream())
+
+        def doc_timestamp_key(doc) -> str:
+            data = doc.to_dict() or {}
+            t = data.get("timestamp")
+            return t if isinstance(t, str) else ""
+
+        docs.sort(key=doc_timestamp_key, reverse=True)
+        return docs
+
+    def _trim_collection_for_pair(self, collection: str, pair: str, keep: int) -> None:
+        """
+        Keep only the newest `keep` docs for a pair in one collection.
+        Deletes older documents in Firestore batches.
+        """
+        if keep <= 0:
+            return
+
+        batch = self.db.batch()
+        to_delete = 0
+        for index, doc in enumerate(self._pair_docs_newest_first(collection, pair)):
+            if index < keep:
+                continue
+            batch.delete(doc.reference)
+            to_delete += 1
+            if to_delete % 500 == 0:
+                batch.commit()
+                batch = self.db.batch()
+
+        if to_delete % 500 != 0 and to_delete > 0:
+            batch.commit()
     
     def clear_prices_for_other_pairs(self, keep_pair: str) -> None:
         """
@@ -360,13 +429,10 @@ class FirebaseStore:
             List of Candle objects
         """
         candles = []
-        query = self.db.collection("prices").where(filter=firestore.FieldFilter("pair", "==", pair)).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
-        
-        for doc in query.stream():
-            data = doc.to_dict()
-            candles.append(Candle.from_dict(data))
-        
-        # Return in chronological order
+        for doc in self._pair_docs_newest_first("prices", pair)[:limit]:
+            candles.append(Candle.from_dict(doc.to_dict()))
+
+        # Return in chronological order (oldest first)
         candles.reverse()
         return candles
     

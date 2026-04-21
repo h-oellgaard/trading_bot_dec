@@ -19,7 +19,7 @@ class TradingStrategy:
         long_ema_period: int = 50
     ):
         """
-        Initialize trading strategy using three EMA indicators.
+        Initialize the trading strategy using three EMA indicators.
         
         Args:
             short_ema_period: Period for short EMA
@@ -169,4 +169,3 @@ class TradingStrategy:
                 return True, new_highest_price
         
         return False, new_highest_price
-

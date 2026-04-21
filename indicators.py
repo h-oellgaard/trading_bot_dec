@@ -45,17 +45,17 @@ def calculate_ema(candles: List[Candle], period: int) -> List[float]:
         return [None] * len(candles)
     
     ema_values = [None] * (period - 1)
-    
-    # Calculate initial SMA for first EMA value
     multiplier = 2.0 / (period + 1)
-    initial_sma = sum(candle.close for candle in candles[:period]) / period
+
+    # First valid EMA at index (period - 1)
+    initial_sma = sum(candle.close for candle in candles[0:period]) / period
     ema_values.append(initial_sma)
-    
-    # Calculate subsequent EMA values
+
     for i in range(period, len(candles)):
-        ema = (candles[i].close - ema_values[i - 1]) * multiplier + ema_values[i - 1]
+        # Use candle at index i, previous EMA at index i-1
+        ema = (candles[i].close - ema_values[-1]) * multiplier + ema_values[-1]
         ema_values.append(ema)
-    
+
     return ema_values
 
 
@@ -253,5 +253,87 @@ def ema_above_ema_for_periods(
         if medium_ema_values[idx] <= long_ema_values[idx]:
             return False
     
+    return True
+
+
+def detect_ema_cross_and_confirm(
+    candles: List[Candle],
+    short_period: int,
+    medium_period: int,
+    confirmation_period: int = 2
+) -> bool:
+    """
+    Detect if the short EMA crosses below the medium EMA and confirm the trend.
+
+    Args:
+        candles: List of Candle objects (sorted by timestamp).
+        short_period: Period for the short EMA.
+        medium_period: Period for the medium EMA.
+        confirmation_period: Number of periods to confirm the trend.
+
+    Returns:
+        True if the cross and confirmation occur, False otherwise.
+    """
+    if len(candles) < max(short_period, medium_period) + confirmation_period:
+        print("Not enough candles for calculation.")
+        return False
+
+    short_ema = calculate_ema(candles, short_period)
+    medium_ema = calculate_ema(candles, medium_period)
+
+    print("Short EMA:", short_ema)
+    print("Medium EMA:", medium_ema)
+
+    # Check for cross
+    if short_ema[-confirmation_period - 1] > medium_ema[-confirmation_period - 1] and \
+       short_ema[-confirmation_period] < medium_ema[-confirmation_period]:
+        print("Crossover detected.")
+        # Confirm the trend
+        for i in range(-confirmation_period, 0):
+            if short_ema[i] >= medium_ema[i]:
+                print(f"Trend confirmation failed at index {i}.")
+                return False
+        print("Trend confirmed.")
+        return True
+
+    print("No crossover detected.")
+    return False
+
+
+def ema_death_cross(candles: List[Candle], short_period: int, long_period: int) -> bool:
+    """Check if short EMA crossed below long EMA"""
+    if len(candles) < long_period + 1:
+        return False
+
+    short_ema = calculate_ema(candles, short_period)
+    long_ema = calculate_ema(candles, long_period)
+
+    if any(v is None for v in [short_ema[-1], short_ema[-2], long_ema[-1], long_ema[-2]]):
+        return False
+
+    # Previous: short > long, Current: short < long
+    return short_ema[-2] > long_ema[-2] and short_ema[-1] < long_ema[-1]
+
+
+def confirm_trend_direction(
+    candles: List[Candle],
+    short_period: int,
+    long_period: int,
+    direction: str,  # 'above' or 'below'
+    min_periods: int = 2
+) -> bool:
+    """Confirm trend has persisted for N periods"""
+    short_ema = calculate_ema(candles, short_period)
+    long_ema = calculate_ema(candles, long_period)
+
+    for i in range(min_periods):
+        idx = -(i + 1)
+        if short_ema[idx] is None or long_ema[idx] is None:
+            return False
+        if direction == 'below' and short_ema[idx] >= long_ema[idx]:
+            return False
+        if direction == 'above' and short_ema[idx] <= long_ema[idx]:
+            return False
+
     return True
 

@@ -4,7 +4,7 @@ Tests rounding of price and quantity for trade execution.
 """
 import pytest
 
-from trader import round_price, round_quantity
+from trader import format_fixed_decimals, round_price, round_quantity
 
 
 def test_round_price_two_decimals():
@@ -48,3 +48,12 @@ def test_round_price_no_excessive_decimals():
     p_str = f"{p:.10f}".rstrip("0").rstrip(".")
     decimal_places = len(p_str.split(".")[-1]) if "." in p_str else 0
     assert decimal_places <= 2
+
+
+def test_format_fixed_decimals_no_float_noise():
+    """API strings use fixed width so str(float) does not emit long tails."""
+    q = round_quantity(0.002345678901234567, decimals=8)
+    s = format_fixed_decimals(q, 8)
+    assert s == "0.00234568"
+    assert "." in s
+    assert len(s.split(".")[1]) == 8

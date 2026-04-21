@@ -19,7 +19,7 @@ load_dotenv()
 
 from settings.trading_config import TRADING_PAIR
 from data_fetcher import FiriDataFetcher
-from trader import FiriTrader
+from trader import FiriTrader, round_price, round_quantity
 
 FIRI_FEE_PERCENT = 0.7  # Firi charges 0.7% per trade
 
@@ -57,10 +57,12 @@ def main():
     # cost_before_fee * (1 + 0.007) = amount_quote
     # cost_before_fee = amount_quote / 1.007
     amount_for_purchase = amount_quote / (1 + FIRI_FEE_PERCENT / 100)
-    quantity = amount_for_purchase / price
+    order_price = round_price(price, trader.price_decimals)
+    quantity = round_quantity(amount_for_purchase / price, trader.quantity_decimals)
     fee_amount = amount_quote - amount_for_purchase
 
-    print(f"Quantity: {quantity:.8f} {base_currency}")
+    qd = trader.quantity_decimals
+    print(f"Quantity: {quantity:.{qd}f} {base_currency}")
     print(f"Fee (~{FIRI_FEE_PERCENT}%): {fee_amount:.2f} {quote_currency}")
     print(f"Total: {amount_quote:.2f} {quote_currency}")
 
@@ -80,10 +82,11 @@ def main():
     trade = trader.place_buy_order(
         pair=TRADING_PAIR,
         quantity=quantity,
-        price=price,
+        price=order_price,
     )
     print(f"\nOrder placed: {trade.trade_id}")
-    print(f"  {trade.quantity:.8f} {base_currency} @ {trade.price:.2f} {quote_currency}")
+    pd, qd = trader.price_decimals, trader.quantity_decimals
+    print(f"  {trade.quantity:.{qd}f} {base_currency} @ {trade.price:.{pd}f} {quote_currency}")
 
 
 if __name__ == "__main__":

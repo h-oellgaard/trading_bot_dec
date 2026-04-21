@@ -14,14 +14,15 @@ from dotenv import load_dotenv
 from data_fetcher import FiriDataFetcher
 from indicators import calculate_ema
 from strategy import TradingStrategy
-from trader import FiriTrader
+from trader import FiriTrader, round_price, round_quantity
 from firebase_store import FirebaseStore, FirebaseLoggingHandler
 from models import Trade, TradeStatus, Signal, SignalType, PortfolioState, Candle
 from settings import (
     CANDLE_INTERVAL,
     CANDLE_LIMIT,
     STARTUP_CANDLE_LIMIT,
-    BUY_BALANCE_FRACTION,
+    BUY_QUOTE_AMOUNT,
+    FIRI_FEE_PERCENT,
     SECONDS_PER_CANDLE,
     TRADING_ENABLED,
     TRADING_PAIR,
@@ -94,31 +95,37 @@ class TradingBot:
         logger.info(f"Poll interval: {self.poll_interval} seconds")
         logger.info(f"Trailing stop loss: {self.trailing_stop_loss_percent}%")
         logger.info(f"Cooldown: {self.cooldown_candles} candles")
+        quote_ccy = self.pair.split("/")[1]
+        logger.info(
+            f"Fixed buy size: {BUY_QUOTE_AMOUNT} {quote_ccy} per order "
+            f"(quantity from ~{FIRI_FEE_PERCENT}% fee-adjusted notional)"
+        )
     
     def initialize(self) -> None:
-        """Initialize and load initial data at startup. Fetches latest candles from API, clears old prices, saves to Firebase."""
-        logger.info(f"Loading initial candle data ({STARTUP_CANDLE_LIMIT} candles, {CANDLE_INTERVAL} interval)...")
+        """Initialize and load initial data at startup from Firebase only."""
+        logger.info(
+            f"Loading initial candle data from Firebase "
+            f"({STARTUP_CANDLE_LIMIT} candles, {CANDLE_INTERVAL} interval)..."
+        )
 
         try:
-            candles = self.data_fetcher.get_candles(
+            candles = self.firebase.get_price_snapshots(
                 pair=self.pair,
-                interval=CANDLE_INTERVAL,
                 limit=STARTUP_CANDLE_LIMIT
             )
             if candles:
-                logger.info(f"Fetched {len(candles)} candles from API")
-                self.firebase.clear_all_prices()  # Remove all pairs to avoid mixing DKK/NOK
-                for candle in candles:
-                    self.firebase.save_price_snapshot(pair=self.pair, candle=candle)
-                logger.info(f"Cleared old prices and saved {len(candles)} candles to Firebase")
+                logger.info(f"Loaded {len(candles)} candles from Firebase")
 
                 # Backfill latest 50 EMA values (short, medium, long) going back from latest
                 self.firebase.clear_ema_for_pair(self.pair)
                 self._backfill_ema_history(candles, limit=50)
             else:
-                logger.warning("No candles loaded at startup")
+                logger.warning(
+                    "No candles found in Firebase at startup. "
+                    "First cron runs must populate prices before EMA backfill is available."
+                )
         except Exception as e:
-            logger.error(f"Error loading initial candles from API: {e}", exc_info=True)
+            logger.error(f"Error loading initial candles from Firebase: {e}", exc_info=True)
             raise
 
     def _backfill_ema_history(self, candles: list[Candle], limit: int = 50) -> None:
@@ -253,15 +260,35 @@ class TradingBot:
             if balance <= 0:
                 logger.warning(f"Insufficient balance: {balance} {quote_currency}")
                 return
-            
-            # Calculate quantity (use fraction of balance to leave margin)
-            quantity = (balance * BUY_BALANCE_FRACTION) / current_price
-            
+
+            if BUY_QUOTE_AMOUNT <= 0:
+                logger.error("BUY_QUOTE_AMOUNT must be positive; skipping buy")
+                return
+
+            spend_total = BUY_QUOTE_AMOUNT
+            if balance < spend_total:
+                logger.warning(
+                    f"Insufficient balance for fixed buy: {balance:.2f} {quote_currency} "
+                    f"(need {spend_total:.2f})"
+                )
+                return
+
+            # Match scripts/test_trade.py: fee reduces quote notional before converting to base quantity
+            amount_for_purchase = spend_total / (1 + FIRI_FEE_PERCENT / 100.0)
+            order_price = round_price(current_price, self.trader.price_decimals)
+            quantity = round_quantity(
+                amount_for_purchase / current_price,
+                self.trader.quantity_decimals,
+            )
+            if quantity <= 0:
+                logger.warning("Computed buy quantity <= 0; skipping")
+                return
+
             # Place buy order
             trade = self.trader.place_buy_order(
                 pair=self.pair,
                 quantity=quantity,
-                price=current_price
+                price=order_price,
             )
             
             # Initialize highest price for trailing stop
@@ -270,7 +297,11 @@ class TradingBot:
             # Save to Firebase
             self.firebase.save_trade(trade)
             
-            logger.info(f"Buy order placed: {quantity:.8f} {self.pair.split('/')[0]} at {current_price:.2f} {quote_currency}")
+            pd, qd = self.trader.price_decimals, self.trader.quantity_decimals
+            logger.info(
+                f"Buy order placed: {quantity:.{qd}f} {self.pair.split('/')[0]} at {order_price:.{pd}f} "
+                f"{quote_currency} (~{spend_total:.2f} {quote_currency} incl. fee)"
+            )
             
         except Exception as e:
             logger.error(f"Error executing buy signal: {e}", exc_info=True)
