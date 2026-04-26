@@ -1,0 +1,3 @@
+# Example crontab line: one bot iteration per hour (adjust path and user).
+# crontab -e
+# 0 * * * * /home/tradingbot/trading-bot/venv/bin/python /home/tradingbot/trading-bot/main.py --once >> /home/tradingbot/trading-bot/cron.log 2>&1

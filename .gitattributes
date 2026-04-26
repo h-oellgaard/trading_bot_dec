@@ -1,0 +1,4 @@
+# Scripts and units run on Linux (VPS); force LF so shebang and systemd stay valid.
+*.sh text eol=lf
+deploy/trading-bot.service text eol=lf
+deploy/logrotate-trading-bot text eol=lf

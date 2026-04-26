@@ -73,10 +73,15 @@ class Trade:
     close_timestamp: Optional[datetime] = None
     profit_loss: Optional[float] = None
     profit_loss_percent: Optional[float] = None
-    
+    # Historical / P&L: quote currency (e.g. DKK for ETH/DKK) spent on buy (incl. fee intent)
+    quote_spent: Optional[float] = None
+    # Quote currency received when closing (sell notional: close_price * quantity)
+    quote_proceeds: Optional[float] = None
+
     def to_dict(self) -> dict:
         """Convert to dictionary for Firebase storage."""
-        return {
+        quote_ccy = self.pair.split("/")[1] if "/" in self.pair else ""
+        d = {
             "trade_id": self.trade_id,
             "pair": self.pair,
             "side": self.side,
@@ -90,12 +95,23 @@ class Trade:
             "close_price": self.close_price,
             "close_timestamp": self.close_timestamp.isoformat() if self.close_timestamp else None,
             "profit_loss": self.profit_loss,
-            "profit_loss_percent": self.profit_loss_percent
+            "profit_loss_percent": self.profit_loss_percent,
+            "quote_spent": self.quote_spent,
+            "quote_proceeds": self.quote_proceeds,
+            # Explicit names for dashboards (profit in pair's quote, e.g. DKK)
+            "buy_amount_base": self.quantity,
+            "quote_currency": quote_ccy,
         }
+        if self.profit_loss is not None:
+            d["profit_quote"] = self.profit_loss
+        return d
     
     @classmethod
     def from_dict(cls, data: dict) -> "Trade":
         """Create from dictionary."""
+        pl = data.get("profit_loss")
+        if pl is None and data.get("profit_quote") is not None:
+            pl = data["profit_quote"]
         return cls(
             trade_id=data["trade_id"],
             pair=data["pair"],
@@ -109,8 +125,10 @@ class Trade:
             highest_price=float(data["highest_price"]) if data.get("highest_price") else None,
             close_price=float(data["close_price"]) if data.get("close_price") else None,
             close_timestamp=datetime.fromisoformat(data["close_timestamp"]) if data.get("close_timestamp") else None,
-            profit_loss=float(data["profit_loss"]) if data.get("profit_loss") else None,
-            profit_loss_percent=float(data["profit_loss_percent"]) if data.get("profit_loss_percent") else None
+            profit_loss=float(pl) if pl is not None else None,
+            profit_loss_percent=float(data["profit_loss_percent"]) if data.get("profit_loss_percent") else None,
+            quote_spent=float(data["quote_spent"]) if data.get("quote_spent") is not None else None,
+            quote_proceeds=float(data["quote_proceeds"]) if data.get("quote_proceeds") is not None else None,
         )
 
 

@@ -7,6 +7,7 @@ import argparse
 import os
 import time
 import logging
+import traceback
 from datetime import datetime, timedelta
 from typing import Optional
 from dotenv import load_dotenv
@@ -215,7 +216,18 @@ class TradingBot:
             # Get current price for sell order
             current_price = self.data_fetcher.get_current_price(trade.pair)
             if current_price is None:
-                logger.error(f"Could not get current price for {trade.pair}")
+                msg = f"Could not get current price for {trade.pair}"
+                logger.error(msg)
+                self.firebase.save_trade_failure(
+                    operation="sell",
+                    pair=trade.pair,
+                    error_message=msg,
+                    details={
+                        "trade_id": trade.trade_id,
+                        "close_reason": reason,
+                        "quantity": trade.quantity,
+                    },
+                )
                 return
             
             # Place sell order
@@ -228,26 +240,49 @@ class TradingBot:
             # Get actual executed price
             close_price = sell_trade.price
             close_timestamp = datetime.now()
-            
-            # Calculate profit/loss
-            profit_loss = (close_price - trade.price) * trade.quantity
-            profit_loss_percent = ((close_price - trade.price) / trade.price) * 100
-            
+            quote_proceeds = close_price * trade.quantity
+            cost_basis_quote = (
+                trade.quote_spent
+                if trade.quote_spent is not None
+                else trade.price * trade.quantity
+            )
+            profit_loss = quote_proceeds - cost_basis_quote
+            profit_loss_percent = (
+                (profit_loss / cost_basis_quote) * 100 if cost_basis_quote > 0 else 0.0
+            )
+
             # Update trade
             trade.status = TradeStatus.CLOSED
             trade.close_price = close_price
             trade.close_timestamp = close_timestamp
+            trade.quote_proceeds = quote_proceeds
             trade.profit_loss = profit_loss
             trade.profit_loss_percent = profit_loss_percent
-            
+
             # Save to Firebase
             self.firebase.save_trade(trade)
-            
-            logger.info(f"Trade closed: P/L = {profit_loss:.2f} DKK ({profit_loss_percent:.2f}%)")
+            self.firebase.append_historical_trade(trade)
+
+            quote_ccy = trade.pair.split("/")[1] if "/" in trade.pair else "quote"
+            logger.info(
+                f"Trade closed: P/L = {profit_loss:.2f} {quote_ccy} ({profit_loss_percent:.2f}%) "
+                f"(proceeds {quote_proceeds:.2f} vs buy {cost_basis_quote:.2f})"
+            )
             
         except Exception as e:
             logger.error(f"Error closing trade: {e}", exc_info=True)
-    
+            self.firebase.save_trade_failure(
+                operation="sell",
+                pair=trade.pair,
+                error_message=str(e),
+                exc_info=traceback.format_exc(),
+                details={
+                    "trade_id": trade.trade_id,
+                    "close_reason": reason,
+                    "quantity": trade.quantity,
+                },
+            )
+
     def execute_buy_signal(self, signal: Signal, current_price: float) -> None:
         """Execute a BUY signal by placing a buy order."""
         logger.info(f"Executing BUY signal: {signal.reason}")
@@ -293,7 +328,8 @@ class TradingBot:
             
             # Initialize highest price for trailing stop
             trade.highest_price = current_price
-            
+            trade.quote_spent = spend_total
+
             # Save to Firebase
             self.firebase.save_trade(trade)
             
@@ -305,7 +341,17 @@ class TradingBot:
             
         except Exception as e:
             logger.error(f"Error executing buy signal: {e}", exc_info=True)
-    
+            self.firebase.save_trade_failure(
+                operation="buy",
+                pair=self.pair,
+                error_message=str(e),
+                exc_info=traceback.format_exc(),
+                details={
+                    "signal_reason": signal.reason,
+                    "price": current_price,
+                },
+            )
+
     def update_portfolio_state(self) -> None:
         """Update and save portfolio state to Firebase."""
         try:

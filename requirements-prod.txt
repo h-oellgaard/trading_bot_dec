@@ -1,0 +1,5 @@
+# Production / VPS: runtime dependencies only (no pytest).
+# Install: pip install -r requirements-prod.txt
+python-dotenv>=1.0.0
+httpx>=0.27.0
+google-cloud-firestore>=2.0.0

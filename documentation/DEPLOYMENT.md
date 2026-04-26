@@ -38,12 +38,15 @@ su - tradingbot
 
 ## Trin 2: Upload Projektet
 
+Klargjorte filer til VPS ligger i **`deploy/`** i repo: systemd-unit (`trading-bot.service`), logrotate, `install-vps.sh`, og `requirements-prod.txt` (kun runtime-afhængigheder, uden pytest). Kort oversigt: `deploy/README.md`.
+
 ### 2.1 Via Git (anbefalet)
 
 ```bash
 cd /home/tradingbot
 git clone <dit-repo-url> trading-bot
 cd trading-bot
+chmod +x deploy/install-vps.sh
 ```
 
 ### 2.2 Via SCP (alternativ)
@@ -68,10 +71,14 @@ source venv/bin/activate
 
 ### 3.2 Installer dependencies
 
+På VPS anbefales **kun produktionspakker** (undgår pytest m.m.):
+
 ```bash
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements-prod.txt
 ```
+
+Alternativt kan du køre `./deploy/install-vps.sh` fra repo-roden (opretter `venv` og installerer `requirements-prod.txt`). Udviklere kan stadig bruge `requirements.txt` lokalt.
 
 ---
 
@@ -106,24 +113,27 @@ chmod 600 /home/tradingbot/trading-bot/service-account-key.json
 
 ```bash
 cd /home/tradingbot/trading-bot
+cp .env.example .env
 nano .env
 ```
 
-### 5.2 Indsæt følgende (opdater med dine værdier):
+### 5.2 Udfyld værdier (skabelon: `.env.example`)
+
+Minimum på VPS:
 
 ```env
 FIRI_API_KEY=din_firi_api_key
 FIRI_SECRET=din_firi_secret
+FIRI_CLIENT_ID=dit_firi_client_id
 FIRI_BASE_URL=https://api.firi.com
 
 GOOGLE_APPLICATION_CREDENTIALS=/home/tradingbot/trading-bot/service-account-key.json
 
-TRADING_PAIR=ETH/DKK
-SHORT_EMA_PERIOD=10
-MEDIUM_EMA_PERIOD=20
-LONG_EMA_PERIOD=50
-POLL_INTERVAL=300
+# false til test (kun signaler/priser); true når du vil handle rigtigt
+TRADING_ENABLED=false
 ```
+
+Handelspar, EMA-perioder og `POLL_INTERVAL` styres primært fra `settings/trading_config.py` i repo; ekstra Firebase-/købsparametre findes i `.env.example` (`BUY_QUOTE_AMOUNT`, `FIRI_FEE_PERCENT`, m.m.).
 
 ### 5.3 Gem og luk
 
@@ -149,37 +159,21 @@ Lad det køre i 1-2 minutter og tjek logs. Stop med Ctrl+C.
 
 ## Trin 7: Systemd Service Opsætning
 
-### 7.1 Opret service fil
+### 7.1 Installer systemd-unit fra repo
 
 ```bash
-sudo nano /etc/systemd/system/trading-bot.service
+cd /home/tradingbot/trading-bot
+# Ret User/Group/stier i filen hvis din bruger eller mappe ikke matcher
+sudo cp deploy/trading-bot.service /etc/systemd/system/trading-bot.service
+sudo nano /etc/systemd/system/trading-bot.service   # kun hvis du skal tilpasse
 ```
 
-### 7.2 Indsæt følgende (opdater stier hvis nødvendigt):
+Unit-filen bruger allerede fuld sti til `venv/bin/python` og kører `main.py` i loop (samme som `python main.py` i test). For **én kørsel per cron** (som Render): sæt `ExecStart=.../python .../main.py --once` i stedet.
 
-```ini
-[Unit]
-Description=Firi Trading Bot
-After=network.target
+### 7.2 Logrotate (valgfrit)
 
-[Service]
-Type=simple
-User=tradingbot
-Group=tradingbot
-WorkingDirectory=/home/tradingbot/trading-bot
-Environment="PATH=/home/tradingbot/trading-bot/venv/bin"
-ExecStart=/home/tradingbot/trading-bot/venv/bin/python /home/tradingbot/trading-bot/main.py
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-
-# Security
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
+```bash
+sudo cp deploy/logrotate-trading-bot /etc/logrotate.d/trading-bot
 ```
 
 ### 7.3 Aktiver og start service
@@ -210,25 +204,9 @@ sudo journalctl -u trading-bot -f
 tail -f /home/tradingbot/trading-bot/trading_bot.log
 ```
 
-### 8.2 Opret log rotation
+### 8.2 Log rotation
 
-```bash
-sudo nano /etc/logrotate.d/trading-bot
-```
-
-Indsæt:
-
-```
-/home/tradingbot/trading-bot/trading_bot.log {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 tradingbot tradingbot
-}
-```
+Brug filen fra repo (samme som trin 7.2), eller kopier manuelt indholdet fra `deploy/logrotate-trading-bot`.
 
 ---
 

@@ -1,0 +1,13 @@
+# Logrotate snippet for trading_bot.log (VPS).
+# Install: sudo cp deploy/logrotate-trading-bot /etc/logrotate.d/trading-bot
+# Adjust path if WorkingDirectory differs from /home/tradingbot/trading-bot
+
+/home/tradingbot/trading-bot/trading_bot.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 tradingbot tradingbot
+}

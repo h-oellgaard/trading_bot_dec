@@ -7,7 +7,7 @@ import logging
 import os
 import traceback
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from google.cloud import firestore
 from google.oauth2 import service_account
 from dotenv import load_dotenv
@@ -15,6 +15,17 @@ from dotenv import load_dotenv
 from models import Trade, Signal, PortfolioState, Candle
 
 load_dotenv()
+
+_log = logging.getLogger(__name__)
+_MAX_EXC_CHARS = 100_000
+
+
+def _firestore_safe_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
 
 
 class FirebaseLoggingHandler(logging.Handler):
@@ -86,6 +97,30 @@ class FirebaseStore:
         """
         trade_ref = self.db.collection("trades").document(trade.trade_id)
         trade_ref.set(trade.to_dict())
+
+    def append_historical_trade(self, trade: Trade) -> None:
+        """
+        Append a closed round-trip row for dashboards (immutable history per close).
+
+        Expects trade.status closed with close_timestamp, profit_loss, quote fields set.
+        """
+        if trade.close_timestamp is None:
+            return
+        quote_ccy = trade.pair.split("/")[1] if "/" in trade.pair else ""
+        row = {
+            "timestamp": trade.close_timestamp.isoformat(),
+            "buy_timestamp": trade.timestamp.isoformat(),
+            "pair": trade.pair,
+            "quote_currency": quote_ccy,
+            "buy_amount_base": trade.quantity,
+            "quote_spent": trade.quote_spent,
+            "quote_proceeds": trade.quote_proceeds,
+            "profit_quote": trade.profit_loss,
+            "buy_trade_id": trade.trade_id,
+            "close_price": trade.close_price,
+            "buy_avg_price": trade.price,
+        }
+        self.db.collection("historical_trades").document(trade.trade_id).set(row)
     
     def get_trade(self, trade_id: str) -> Optional[Trade]:
         """
@@ -531,4 +566,32 @@ class FirebaseStore:
 
         # Use auto-generated ID to avoid collisions
         self.db.collection("logs").add(log_data)
+
+    def save_trade_failure(
+        self,
+        operation: str,
+        pair: str,
+        error_message: str,
+        exc_info: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Persist a failed trade attempt to Firestore (trade_failures collection).
+
+        Never raises: failures here are logged to stderr only.
+        """
+        try:
+            doc: Dict[str, Any] = {
+                "timestamp": datetime.now().isoformat(),
+                "operation": operation,
+                "pair": pair,
+                "error_message": error_message,
+            }
+            if exc_info:
+                doc["exc_info"] = exc_info[:_MAX_EXC_CHARS]
+            if details:
+                doc["details"] = {k: _firestore_safe_value(v) for k, v in details.items()}
+            self.db.collection("trade_failures").add(doc)
+        except Exception as e:
+            _log.warning("save_trade_failure could not write to Firestore: %s", e, exc_info=True)
 

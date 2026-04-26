@@ -51,6 +51,8 @@ pip install -r requirements.txt
      - `GOOGLE_APPLICATION_CREDENTIALS`: Sti til Firebase service account JSON-fil
      - Juster andre indstillinger efter behov
 
+**VPS / produktion:** Brug `requirements-prod.txt`, filer under `deploy/`, og den fulde guide i [DEPLOYMENT.md](DEPLOYMENT.md) (systemd, logrotate, `.env`).
+
 ## Kørsel
 
 ```bash

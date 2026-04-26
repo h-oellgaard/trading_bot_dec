@@ -1,0 +1,30 @@
+# Firi trading bot — systemd unit (VPS).
+# 1. Adjust User, Group, and paths if your home directory differs.
+# 2. sudo cp deploy/trading-bot.service /etc/systemd/system/trading-bot.service
+# 3. sudo systemctl daemon-reload && sudo systemctl enable --now trading-bot
+#
+# Continuous loop: main.py (uses POLL_INTERVAL from .env / trading_config).
+# Cron-style single run: ExecStart=.../python main.py --once
+
+[Unit]
+Description=Firi trading bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tradingbot
+Group=tradingbot
+WorkingDirectory=/home/tradingbot/trading-bot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/tradingbot/trading-bot/venv/bin/python /home/tradingbot/trading-bot/main.py
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -11,7 +11,7 @@ services:
     # Every hour (CANDLE_INTERVAL 1h)
     schedule: "0 * * * *"
 
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-prod.txt
     startCommand: python main.py --once
 
     envVars:
